@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Controle de Paradas</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #eef2f7;
+      margin: 0;
+      padding: 0;
+      color: #1f2937;
+    }
+
+    .container {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 18px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 18px rgba(0,0,0,.07);
+    }
+
+    h1, h2, h3, h4 {
+      margin-top: 0;
+    }
+
+    input, select, textarea, button {
+      width: 100%;
+      padding: 12px;
+      margin-top: 8px;
+      margin-bottom: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+
+    button {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    button:hover {
+      opacity: .95;
+    }
+
+    .btn-secondary {
+      background: #6b7280;
+    }
+
+    .btn-danger {
+      background: #dc2626;
+    }
+
+    .btn-success {
+      background: #16a34a;
+    }
+
+    .grid-2, .grid-3, .grid-4, .menu {
+      display: grid;
+      gap: 12px;
+    }
+
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .grid-4 { grid-template-columns: repeat(4, 1fr); }
+    .menu { grid-template-columns: repeat(5, 1fr); }
+
+    .hidden { display: none; }
+
+    .item {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 12px;
+      background: #f9fafb;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .aberta {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .finalizada {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .erro { color: #dc2626; font-weight: bold; }
+    .ok { color: #16a34a; font-weight: bold; }
+    .small { font-size: 12px; color: #6b7280; }
+
+    .section-title {
+      margin: 22px 0 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      background: #fff;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    th, td {
+      border: 1px solid #e5e7eb;
+      padding: 10px;
+      text-align: left;
+      font-size: 14px;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f3f4f6;
+    }
+
+    .actions-col button {
+      margin-bottom: 6px;
+    }
+
+    label.inline-check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+
+    label.inline-check input {
+      width: auto;
+      margin: 0;
+    }
+
+    .tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 900px) {
+      .grid-2, .grid-3, .grid-4, .menu, .tabs {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div id="loginTela" class="card">
+      <h1>Controle de Paradas</h1>
+      <input type="email" id="email" placeholder="E-mail" />
+      <input type="password" id="senha" placeholder="Senha" />
+      <button onclick="login()">Entrar</button>
+      <div id="loginMsg"></div>
+    </div>
+
+    <div id="appTela" class="hidden">
+      <div class="card">
+        <h2 id="saudacao">Olá</h2>
+        <div class="small" id="dadosUsuario"></div>
+
+        <div class="menu" style="margin-top:12px;">
+          <button onclick="mostrarTela('novaParadaTela')">Nova parada</button>
+          <button onclick="mostrarTela('abertasTela'); carregarAbertas()">Em aberto</button>
+          <button onclick="mostrarTela('historicoTela'); carregarHistorico()">Histórico</button>
+          <button onclick="mostrarTela('dashboardTela'); carregarDashboard()">Dashboard</button>
+          <button id="btnAdmin" class="hidden" onclick="mostrarTela('adminTela'); carregarUsuariosAdmin()">Admin</button>
+        </div>
+
+        <button class="btn-secondary" onclick="logout()">Sair</button>
+      </div>
+
+      <div id="novaParadaTela" class="card">
+        <h3>Nova parada</h3>
+
+        <div class="grid-2">
+          <input type="date" id="dataParada" />
+          <input type="text" id="setor" readonly />
+        </div>
+
+        <select id="maquinaSelect"></select>
+        <textarea id="motivo" rows="4" placeholder="Motivo da parada"></textarea>
+        <input type="time" id="horaInicio" />
+
+        <button onclick="abrirParada()">Abrir parada</button>
+        <div id="novaParadaMsg"></div>
+      </div>
+
+      <div id="abertasTela" class="card hidden">
+        <h3>Paradas em aberto</h3>
+        <div id="listaAbertas"></div>
+      </div>
+
+      <div id="historicoTela" class="card hidden">
+        <h3>Histórico</h3>
+        <div class="grid-3">
+          <input type="date" id="filtroInicioHistorico" />
+          <input type="date" id="filtroFimHistorico" />
+          <button onclick="carregarHistorico()">Aplicar filtro</button>
+        </div>
+        <div id="listaHistorico"></div>
+      </div>
+
+      <div id="dashboardTela" class="card hidden">
+        <h3>Dashboard</h3>
+        <div class="grid-3">
+          <input type="date" id="filtroInicioDash" />
+          <input type="date" id="filtroFimDash" />
+          <button onclick="carregarDashboard()">Aplicar filtro</button>
+        </div>
+
+        <div class="grid-4" id="resumoBoxes"></div>
+
+        <h4 class="section-title">Resumo por máquina</h4>
+        <div id="tabelaMaquinas"></div>
+      </div>
+
+      <div id="adminTela" class="card hidden">
+        <h3>Administração</h3>
+
+        <div class="tabs">
+          <button onclick="mostrarAdminAba('abaCriarUsuario')">Criar usuário</button>
+          <button onclick="mostrarAdminAba('abaUsuarios')">Gerenciar usuários</button>
+          <button onclick="mostrarAdminAba('abaCadastros')">Setores e máquinas</button>
+        </div>
+
+        <div id="abaCriarUsuario">
+          <h4 class="section-title">Criar usuário</h4>
+
+          <input type="text" id="novoNome" placeholder="Nome" />
+          <input type="email" id="novoEmail" placeholder="E-mail" />
+          <input type="password" id="novoPassword" placeholder="Senha" />
+          <select id="novoSetor"></select>
+          <input type="text" id="novoCargo" placeholder="Cargo" value="Lider" />
+
+          <label class="inline-check">
+            <input type="checkbox" id="novoAdmin">
+            Administrador
+          </label>
+
+          <label class="inline-check">
+            <input type="checkbox" id="novoMultiSetor">
+            Pode lançar em qualquer setor
+          </label>
+
+          <button onclick="criarUsuario()">Criar usuário</button>
+          <div id="adminMsg"></div>
+        </div>
+
+        <div id="abaUsuarios" class="hidden">
+          <h4 class="section-title">Gerenciar usuários</h4>
+          <div id="usuariosAdminLista"></div>
+        </div>
+
+        <div id="abaCadastros" class="hidden">
+          <h4 class="section-title">Criar setor</h4>
+          <input type="text" id="novoNomeSetor" placeholder="Nome do setor" />
+          <button onclick="criarSetor()">Criar setor</button>
+          <div id="setorMsg"></div>
+
+          <h4 class="section-title">Criar máquina</h4>
+          <input type="text" id="novaMaquinaCodigo" placeholder="Código da máquina" />
+          <input type="text" id="novaMaquinaNome" placeholder="Nome da máquina" />
+          <select id="novaMaquinaSetor"></select>
+          <button onclick="criarMaquina()">Criar máquina</button>
+          <div id="maquinaMsg"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://mzawmvqrlrptidcwxkoi.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im16YXdtdnFybHJwdGlkY3d4a29pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1NzU4ODQsImV4cCI6MjA4OTE1MTg4NH0.mdl00txGN4GpXdLsgeANS1m05iTeQaO76jo7yggp004';
+
+    const { createClient } = supabase;
+    const client = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let usuario = null;
+    let perfil = null;
+
+    document.getElementById('dataParada').value = hojeISO();
+    document.getElementById('filtroInicioHistorico').value = primeiroDiaMes();
+    document.getElementById('filtroFimHistorico').value = hojeISO();
+    document.getElementById('filtroInicioDash').value = primeiroDiaMes();
+    document.getElementById('filtroFimDash').value = hojeISO();
+
+    async function login() {
+      const email = document.getElementById('email').value.trim();
+      const senha = document.getElementById('senha').value.trim();
+      const msg = document.getElementById('loginMsg');
+      msg.innerHTML = '';
+
+      try {
+        const { data, error } = await client.auth.signInWithPassword({
+          email,
+          password: senha
+        });
+
+        if (error) {
+          msg.innerHTML = `<div class="erro">${error.message}</div>`;
+          return;
+        }
+
+        if (!data?.user) {
+          msg.innerHTML = `<div class="erro">Usuário não retornado no login.</div>`;
+          return;
+        }
+
+        usuario = data.user;
+        await carregarPerfil();
+
+      } catch (err) {
+        msg.innerHTML = `<div class="erro">Erro no login: ${err.message}</div>`;
+      }
+    }
+
+    async function carregarPerfil() {
+      const msg = document.getElementById('loginMsg');
+
+      try {
+        const { data, error } = await client
+          .from('perfis')
+          .select('*')
+          .eq('id', usuario.id)
+          .single();
+
+        if (error) {
+          msg.innerHTML = `<div class="erro">Erro ao carregar perfil: ${error.message}</div>`;
+          return;
+        }
+
+        if (!data) {
+          msg.innerHTML = `<div class="erro">Perfil não encontrado para este usuário.</div>`;
+          return;
+        }
+
+        perfil = data;
+
+        document.getElementById('loginTela').classList.add('hidden');
+        document.getElementById('appTela').classList.remove('hidden');
+
+        document.getElementById('saudacao').innerText = `Olá, ${perfil.nome}`;
+        document.getElementById('dadosUsuario').innerText =
+          `Setor: ${perfil.setor} | Cargo: ${perfil.cargo} | Admin: ${perfil.admin ? 'Sim' : 'Não'} | Multi Setor: ${perfil.multi_setor ? 'Sim' : 'Não'}`;
+
+        document.getElementById('setor').value = perfil.setor || '';
+
+        if (perfil.admin) {
+          document.getElementById('btnAdmin').classList.remove('hidden');
+          await carregarSetoresAdmin();
+        } else {
+          document.getElementById('btnAdmin').classList.add('hidden');
+        }
+
+        await carregarMaquinas();
+        await carregarAbertas();
+        await carregarHistorico();
+        await carregarDashboard();
+
+      } catch (err) {
+        msg.innerHTML = `<div class="erro">Falha ao abrir o app: ${err.message}</div>`;
+      }
+    }
+
+    async function criarUsuario() {
+      const nome = document.getElementById('novoNome').value.trim();
+      const email = document.getElementById('novoEmail').value.trim();
+      const password = document.getElementById('novoPassword').value.trim();
+      const setor = document.getElementById('novoSetor').value.trim();
+      const cargo = document.getElementById('novoCargo').value.trim();
+      const admin = document.getElementById('novoAdmin').checked;
+      const multi_setor = document.getElementById('novoMultiSetor').checked;
+      const msg = document.getElementById('adminMsg');
+
+      msg.innerHTML = '';
+
+      if (!nome || !email || !password || !setor || !cargo) {
+        msg.innerHTML = `<div class="erro">Preencha todos os campos.</div>`;
+        return;
+      }
+
+      try {
+        const { data: sessao, error: erroSessao } = await client.auth.getSession();
+
+        if (erroSessao || !sessao?.session?.access_token) {
+          msg.innerHTML = `<div class="erro">Sessão inválida. Saia e entre novamente.</div>`;
+          return;
+        }
+
+        const accessToken = sessao.session.access_token;
+
+        const resp = await fetch('https://mzawmvqrlrptidcwxkoi.supabase.co/functions/v1/criar-usuarios', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': SUPABASE_KEY
+          },
+          body: JSON.stringify({
+            nome,
+            email,
+            password,
+            setor,
+            cargo,
+            admin,
+            multi_setor
+          })
+        });
+
+        const texto = await resp.text();
+        let json = {};
+
+        try {
+          json = JSON.parse(texto);
+        } catch (_) {}
+
+        if (!resp.ok) {
+          msg.innerHTML = `<div class="erro">Status ${resp.status}: ${json.error || texto || 'Erro ao criar usuário.'}</div>`;
+          return;
+        }
+
+        msg.innerHTML = `<div class="ok">${json.message || 'Usuário criado com sucesso.'}</div>`;
+
+        document.getElementById('novoNome').value = '';
+        document.getElementById('novoEmail').value = '';
+        document.getElementById('novoPassword').value = '';
+        document.getElementById('novoSetor').value = '';
+        document.getElementById('novoCargo').value = 'Lider';
+        document.getElementById('novoAdmin').checked = false;
+        document.getElementById('novoMultiSetor').checked = false;
+
+        await carregarUsuariosAdmin();
+
+      } catch (err) {
+        msg.innerHTML = `<div class="erro">Erro de conexão: ${err.message}</div>`;
+      }
+    }
+
+    async function carregarUsuariosAdmin() {
+      const div = document.getElementById('usuariosAdminLista');
+
+      const { data, error } = await client
+        .from('perfis')
+        .select('*')
+        .order('nome', { ascending: true });
+
+      if (error) {
+        div.innerHTML = `<div class="erro">${error.message}</div>`;
+        return;
+      }
+
+      if (!data?.length) {
+        div.innerHTML = '<p>Nenhum usuário encontrado.</p>';
+        return;
+      }
+
+      div.innerHTML = data.map(u => `
+        <div class="item">
+          <div class="grid-3">
+            <input id="nome_${u.id}" value="${u.nome || ''}" placeholder="Nome" />
+            <input id="email_${u.id}" value="${u.email || ''}" placeholder="Email" />
+            <input id="cargo_${u.id}" value="${u.cargo || ''}" placeholder="Cargo" />
+          </div>
+
+          <div class="grid-3">
+            <input id="setor_${u.id}" value="${u.setor || ''}" placeholder="Setor" />
+            <input id="senha_${u.id}" type="password" placeholder="Nova senha" />
+            <input value="${u.id}" readonly />
+          </div>
+
+          <label class="inline-check">
+            <input type="checkbox" id="ativo_${u.id}" ${u.ativo ? 'checked' : ''}>
+            Ativo
+          </label>
+
+          <label class="inline-check">
+            <input type="checkbox" id="admin_${u.id}" ${u.admin ? 'checked' : ''}>
+            Admin
+          </label>
+
+          <label class="inline-check">
+            <input type="checkbox" id="multi_${u.id}" ${u.multi_setor ? 'checked' : ''}>
+            Multi setor
+          </label>
+
+          <div class="grid-2">
+            <button class="btn-success" onclick="salvarUsuarioAdmin('${u.id}')">Salvar alterações</button>
+            <button class="btn-secondary" onclick="resetarSenhaAdmin('${u.id}')">Resetar senha</button>
+          </div>
+
+          <div id="msg_${u.id}"></div>
+        </div>
+      `).join('');
+    }
+
+    async function salvarUsuarioAdmin(userId) {
+      const msg = document.getElementById(`msg_${userId}`);
+      msg.innerHTML = '';
+
+      try {
+        const { data: sessao } = await client.auth.getSession();
+        const token = sessao?.session?.access_token;
+
+        const resp = await fetch('https://mzawmvqrlrptidcwxkoi.supabase.co/functions/v1/gerenciar-usuarios', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'apikey': SUPABASE_KEY
+          },
+          body: JSON.stringify({
+            acao: 'editar',
+            user_id: userId,
+            nome: document.getElementById(`nome_${userId}`).value.trim(),
+            email: document.getElementById(`email_${userId}`).value.trim(),
+            setor: document.getElementById(`setor_${userId}`).value.trim(),
+            cargo: document.getElementById(`cargo_${userId}`).value.trim(),
+            ativo: document.getElementById(`ativo_${userId}`).checked,
+            admin: document.getElementById(`admin_${userId}`).checked,
+            multi_setor: document.getElementById(`multi_${userId}`).checked
+          })
+        });
+
+        const texto = await resp.text();
+        let json = {};
+        try { json = JSON.parse(texto); } catch (_) {}
+
+        if (!resp.ok) {
+          msg.innerHTML = `<div class="erro">${json.error || texto}</div>`;
+          return;
+        }
+
+        msg.innerHTML = `<div class="ok">${json.message || 'Usuário atualizado.'}</div>`;
+
+      } catch (err) {
+        msg.innerHTML = `<div class="erro">${err.message}</div>`;
+      }
+    }
+
+    async function resetarSenhaAdmin(userId) {
+      const msg = document.getElementById(`msg_${userId}`);
+      const novaSenha = document.getElementById(`senha_${userId}`).value.trim();
+      msg.innerHTML = '';
+
+      if (!novaSenha) {
+        msg.innerHTML = `<div class="erro">Informe a nova senha.</div>`;
+        return;
+      }
+
+      try {
+        const { data: sessao } = await client.auth.getSession();
+        const token = sessao?.session?.access_token;
+
+        const resp = await fetch('https://mzawmvqrlrptidcwxkoi.supabase.co/functions/v1/gerenciar-usuarios', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'apikey': SUPABASE_KEY
+          },
+          body: JSON.stringify({
+            acao: 'resetar_senha',
+            user_id: userId,
+            nova_senha: novaSenha
+          })
+        });
+
+        const texto = await resp.text();
+        let json = {};
+        try { json = JSON.parse(texto); } catch (_) {}
+
+        if (!resp.ok) {
+          msg.innerHTML = `<div class="erro">${json.error || texto}</div>`;
+          return;
+        }
+
+        msg.innerHTML = `<div class="ok">${json.message || 'Senha redefinida.'}</div>`;
+        document.getElementById(`senha_${userId}`).value = '';
+
+      } catch (err) {
+        msg.innerHTML = `<div class="erro">${err.message}</div>`;
+      }
+    }
+
+    async function carregarMaquinas() {
+      const select = document.getElementById('maquinaSelect');
+      select.innerHTML = '<option value="">Selecione a máquina</option>';
+
+      let query = client
+        .from('maquinas')
+        .select('id, nome, setor')
+        .eq('ativa', true)
+        .order('nome', { ascending: true });
+
+      if (!perfil.admin && !perfil.multi_setor) {
+        query = query.eq('setor', perfil.setor);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        select.innerHTML = '<option value="">Erro ao carregar máquinas</option>';
+        return;
+      }
+
+      data.forEach(m => {
+        select.innerHTML += `<option value="${m.id}" data-nome="${m.nome}" data-setor="${m.setor}">${m.nome} - ${m.setor}</option>`;
+      });
+    }
+
+    async function abrirParada() {
+      const select = document.getElementById('maquinaSelect');
+      const option = select.options[select.selectedIndex];
+
+      const maquinaId = select.value;
+      const maquinaNome = option?.dataset?.nome || '';
+      const setorMaquina = option?.dataset?.setor || perfil.setor;
+      const dataParada = document.getElementById('dataParada').value;
+      const motivo = document.getElementById('motivo').value.trim();
+      const horaInicio = document.getElementById('horaInicio').value;
+      const msg = document.getElementById('novaParadaMsg');
+
+      msg.innerHTML = '';
+
+      if (!maquinaId || !dataParada || !motivo || !horaInicio) {
+        msg.innerHTML = `<div class="erro">Preencha todos os campos.</div>`;
+        return;
+      }
+
+      const { error } = await client
+        .from('paradas')
+        .insert([{
+          maquina_id: maquinaId,
+          maquina_nome: maquinaNome,
+          setor: setorMaquina,
+          data_parada: dataParada,
+          motivo: motivo,
+          hora_inicio: horaInicio,
+          usuario_id: usuario.id,
+          usuario_nome: perfil.nome
+        }]);
+
+      if (error) {
+        msg.innerHTML = `<div class="erro">${error.message}</div>`;
+        return;
+      }
+
+      msg.innerHTML = `<div class="ok">Parada aberta com sucesso.</div>`;
+
+      document.getElementById('maquinaSelect').value = '';
+      document.getElementById('motivo').value = '';
+      document.getElementById('horaInicio').value = '';
+
+      await carregarAbertas();
+      await carregarHistorico();
+      await carregarDashboard();
+    }
+
+    async function carregarAbertas() {
+      const div = document.getElementById('listaAbertas');
+
+      let query = client
+        .from('paradas')
+        .select('*')
+        .eq('status', 'ABERTA')
+        .order('data_lancamento', { ascending: false });
+
+      if (!perfil.admin && !perfil.multi_setor) {
+        query = query.eq('setor', perfil.setor);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        div.innerHTML = `<div class="erro">${error.message}</div>`;
+        return;
+      }
+
+      if (!data.length) {
+        div.innerHTML = '<p>Nenhuma parada em aberto.</p>';
+        return;
+      }
+
+      div.innerHTML = '';
+
+      data.forEach(item => {
+div.innerHTML += `
+<div class="item">
+<b>Máquina:</b> ${item.maquina_nome}<br>
+<b>Setor:</b> ${item.setor}<br>
+<b>Data parada:</b> ${item.data_parada}<br>
+<b>Hora início:</b> ${item.hora_inicio}<br>
+<b>Motivo:</b> ${item.motivo}<br>
+<b>Usuário:</b> ${item.usuario_nome}<br><br>
+
+<input type="time" id="fim_${item.id}" />
+<textarea id="obs_${item.id}" rows="3" placeholder="Observação da resolução"></textarea>
+<button onclick="finalizarParada('${item.id}', '${item.hora_inicio}')">Finalizar parada</button>
+${perfil.admin ? `<button class="btn-danger" onclick="excluirParadaAdmin('${item.id}')">Excluir parada</button>` : ''}
+</div>
+`;
+      });
+    }
+
+    async function finalizarParada(id, horaInicio) {
+      const horaFim = document.getElementById(`fim_${id}`).value;
+      const observacao = document.getElementById(`obs_${id}`).value.trim();
+
+      if (!horaFim) {
+        alert('Informe a hora final.');
+        return;
+      }
+
+      const duracao = calcularDuracaoMin(horaInicio, horaFim);
+
+      const { error } = await client
+        .from('paradas')
+        .update({
+          hora_fim: horaFim,
+          observacao: observacao,
+          status: 'FINALIZADA',
+          duracao_min: duracao
+        })
+        .eq('id', id);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      alert('Parada finalizada com sucesso.');
+
+      await carregarAbertas();
+      await carregarHistorico();
+      await carregarDashboard();
+    }
+
+    async function carregarHistorico() {
+      const lista = document.getElementById('listaHistorico');
+      const inicio = document.getElementById('filtroInicioHistorico').value;
+      const fim = document.getElementById('filtroFimHistorico').value;
+
+      let query = client
+        .from('paradas')
+        .select('*')
+        .gte('data_parada', inicio)
+        .lte('data_parada', fim)
+        .order('data_lancamento', { ascending: false });
+
+      if (!perfil.admin && !perfil.multi_setor) {
+        query = query.eq('setor', perfil.setor);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        lista.innerHTML = `<div class="erro">${error.message}</div>`;
+        return;
+      }
+
+      if (!data.length) {
+        lista.innerHTML = '<p>Sem histórico no período.</p>';
+        return;
+      }
+
+      lista.innerHTML = '';
+
+      data.forEach(item => {
+        const classe = item.status === 'ABERTA' ? 'aberta' : 'finalizada';
+
+        lista.innerHTML += `
+  <div class="item">
+    <span class="badge ${classe}">${item.status}</span><br><br>
+    <b>Máquina:</b> ${item.maquina_nome}<br>
+    <b>Setor:</b> ${item.setor}<br>
+    <b>Data parada:</b> ${item.data_parada}<br>
+    <b>Motivo:</b> ${item.motivo}<br>
+    <b>Início:</b> ${item.hora_inicio || '-'}<br>
+    <b>Fim:</b> ${item.hora_fim || '-'}<br>
+    <b>Duração:</b> ${minutosParaHora(item.duracao_min || 0)}<br>
+    <b>Observação:</b> ${item.observacao || '-'}<br>
+    <b>Usuário:</b> ${item.usuario_nome}
+    ${perfil.admin ? `<br><br><button class="btn-danger" onclick="excluirParadaAdmin('${item.id}')">Excluir parada</button>` : ''}
+  </div>
+`;      });
+    }
+
+    async function carregarDashboard() {
+      const inicio = document.getElementById('filtroInicioDash').value;
+      const fim = document.getElementById('filtroFimDash').value;
+
+      let query = client
+        .from('paradas')
+        .select('*')
+        .gte('data_parada', inicio)
+        .lte('data_parada', fim);
+
+      if (!perfil.admin && !perfil.multi_setor) {
+        query = query.eq('setor', perfil.setor);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        document.getElementById('resumoBoxes').innerHTML = `<div class="erro">${error.message}</div>`;
+        return;
+      }
+
+      const totalParadas = data.length;
+      const abertas = data.filter(x => x.status === 'ABERTA').length;
+      const finalizadas = data.filter(x => x.status === 'FINALIZADA').length;
+      const totalMin = data.reduce((s, x) => s + Number(x.duracao_min || 0), 0);
+
+      document.getElementById('resumoBoxes').innerHTML = `
+        <div class="item"><b>Total de paradas</b><br><h2>${totalParadas}</h2></div>
+        <div class="item"><b>Em aberto</b><br><h2>${abertas}</h2></div>
+        <div class="item"><b>Finalizadas</b><br><h2>${finalizadas}</h2></div>
+        <div class="item"><b>Horas acumuladas</b><br><h2>${minutosParaHora(totalMin)}</h2></div>
+      `;
+
+      const resumoMaquinas = {};
+
+      data.forEach(item => {
+        if (!resumoMaquinas[item.maquina_nome]) {
+          resumoMaquinas[item.maquina_nome] = { qtd: 0, min: 0 };
+        }
+
+        resumoMaquinas[item.maquina_nome].qtd += 1;
+        resumoMaquinas[item.maquina_nome].min += Number(item.duracao_min || 0);
+      });
+
+      const linhas = Object.entries(resumoMaquinas)
+        .sort((a, b) => b[1].min - a[1].min)
+        .map(([maquina, v]) => `
+          <tr>
+            <td>${maquina}</td>
+            <td>${v.qtd}</td>
+            <td>${minutosParaHora(v.min)}</td>
+          </tr>
+        `).join('');
+
+      document.getElementById('tabelaMaquinas').innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Máquina</th>
+              <th>Qtd. paradas</th>
+              <th>Tempo acumulado</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${linhas || '<tr><td colspan="3">Sem dados</td></tr>'}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function carregarSetoresAdmin() {
+      const selectMaquina = document.getElementById('novaMaquinaSetor');
+      const selectUsuario = document.getElementById('novoSetor');
+
+      const { data, error } = await client
+        .from('setores')
+        .select('*')
+        .eq('ativo', true)
+        .order('nome', { ascending: true });
+
+      if (error) return;
+
+      if (selectMaquina) {
+        selectMaquina.innerHTML = '<option value="">Selecione o setor</option>';
+        data.forEach(s => {
+          selectMaquina.innerHTML += `<option value="${s.nome}">${s.nome}</option>`;
+        });
+      }
+
+      if (selectUsuario) {
+        selectUsuario.innerHTML = '<option value="">Selecione o setor</option>';
+        data.forEach(s => {
+          selectUsuario.innerHTML += `<option value="${s.nome}">${s.nome}</option>`;
+        });
+      }
+    }
+
+    async function criarSetor() {
+      const nome = document.getElementById('novoNomeSetor').value.trim();
+      const msg = document.getElementById('setorMsg');
+
+      msg.innerHTML = '';
+
+      if (!nome) {
+        msg.innerHTML = `<div class="erro">Informe o nome do setor.</div>`;
+        return;
+      }
+
+      const { error } = await client
+        .from('setores')
+        .insert([{ nome, ativo: true }]);
+
+      if (error) {
+        msg.innerHTML = `<div class="erro">${error.message}</div>`;
+        return;
+      }
+
+      msg.innerHTML = `<div class="ok">Setor criado com sucesso.</div>`;
+      document.getElementById('novoNomeSetor').value = '';
+      await carregarSetoresAdmin();
+    }
+
+    async function criarMaquina() {
+      const codigo = document.getElementById('novaMaquinaCodigo').value.trim();
+      const nome = document.getElementById('novaMaquinaNome').value.trim();
+      const setor = document.getElementById('novaMaquinaSetor').value;
+      const msg = document.getElementById('maquinaMsg');
+
+      msg.innerHTML = '';
+
+      if (!nome || !setor) {
+        msg.innerHTML = `<div class="erro">Preencha nome e setor.</div>`;
+        return;
+      }
+
+      const { error } = await client
+        .from('maquinas')
+        .insert([{
+          codigo: codigo || null,
+          nome,
+          setor,
+          ativa: true
+        }]);
+
+      if (error) {
+        msg.innerHTML = `<div class="erro">${error.message}</div>`;
+        return;
+      }
+
+      msg.innerHTML = `<div class="ok">Máquina criada com sucesso.</div>`;
+      document.getElementById('novaMaquinaCodigo').value = '';
+      document.getElementById('novaMaquinaNome').value = '';
+      document.getElementById('novaMaquinaSetor').value = '';
+      await carregarMaquinas();
+    }
+
+    function mostrarTela(id) {
+      const telas = [
+        'novaParadaTela',
+        'abertasTela',
+        'historicoTela',
+        'dashboardTela',
+        'adminTela'
+      ];
+
+      telas.forEach(t => document.getElementById(t).classList.add('hidden'));
+      document.getElementById(id).classList.remove('hidden');
+    }
+
+    function mostrarAdminAba(id) {
+      ['abaCriarUsuario', 'abaUsuarios', 'abaCadastros'].forEach(aba => {
+        document.getElementById(aba).classList.add('hidden');
+      });
+      document.getElementById(id).classList.remove('hidden');
+    }
+
+    async function logout() {
+      await client.auth.signOut();
+      usuario = null;
+      perfil = null;
+
+      document.getElementById('appTela').classList.add('hidden');
+      document.getElementById('loginTela').classList.remove('hidden');
+      document.getElementById('loginMsg').innerHTML = '';
+    }
+
+    function hojeISO() {
+      const hoje = new Date();
+      return hoje.toISOString().slice(0, 10);
+    }
+
+    function primeiroDiaMes() {
+      const d = new Date();
+      d.setDate(1);
+      return d.toISOString().slice(0, 10);
+    }
+
+    function calcularDuracaoMin(horaInicio, horaFim) {
+      const [hi, mi] = horaInicio.split(':').map(Number);
+      const [hf, mf] = horaFim.split(':').map(Number);
+
+      let inicio = hi * 60 + mi;
+      let fim = hf * 60 + mf;
+      let total = fim - inicio;
+
+      if (total < 0) total += 1440;
+
+      return total;
+    }
+
+    function minutosParaHora(min) {
+      const total = Number(min || 0);
+      const horas = Math.floor(total / 60);
+      const minutos = total % 60;
+
+      return String(horas).padStart(2, '0') + ':' + String(minutos).padStart(2, '0');
+    }
+async function excluirParadaAdmin(paradaId) {
+  const confirmar = confirm('Deseja realmente excluir esta parada?');
+  if (!confirmar) return;
+
+  try {
+    const { data: sessao, error: erroSessao } = await client.auth.getSession();
+
+    if (erroSessao || !sessao?.session?.access_token) {
+      alert('Sessão inválida. Faça login novamente.');
+      return;
+    }
+
+    const accessToken = sessao.session.access_token;
+
+    const resp = await fetch('https://mzawmvqrlrptidcwxkoi.supabase.co/functions/v1/excluir-parada', {
+      method: 'POST',
+      mode: 'cors',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'apikey': SUPABASE_KEY
+      },
+      body: JSON.stringify({ parada_id: paradaId })
+    });
+
+    const texto = await resp.text();
+    let json = {};
+    try { json = JSON.parse(texto); } catch (_) {}
+
+    if (!resp.ok) {
+      alert(json.error || texto || 'Erro ao excluir parada.');
+      return;
+    }
+
+    alert(json.message || 'Parada excluída com sucesso.');
+    await carregarAbertas();
+    await carregarHistorico();
+    await carregarDashboard();
+
+  } catch (err) {
+    alert(`Erro de conexão: ${err.message}`);
+  }
+}
+    window.addEventListener('load', async () => {
+      const { data } = await client.auth.getSession();
+
+      if (data?.session?.user) {
+        usuario = data.session.user;
+        await carregarPerfil();
+      }
+    });
+// SERVICE WORKER
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('service-worker.js')
+    .then(() => console.log('PWA ativo'));
+}
+  </script>
+</body>
+</html>
