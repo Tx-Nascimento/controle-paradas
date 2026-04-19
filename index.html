@@ -1426,38 +1426,55 @@ window.addEventListener('online', async () => {
 
 window.addEventListener('offline', () => {
   atualizarStatusConexao();
-});
 
+  if (perfil) {
+    abrirAppOffline();
+  }
+});
 window.addEventListener('load', async () => {
   atualizarStatusConexao();
 
-  const sessaoOffline = JSON.parse(localStorage.getItem('sessaoOffline') || 'null');
+  const sessaoOffline =
+    JSON.parse(localStorage.getItem('sessaoOffline') || 'null');
 
-  const { data } = await client.auth.getSession();
+  if (!navigator.onLine && sessaoOffline) {
+    usuario = { id: sessaoOffline.id };
+    perfil = sessaoOffline;
 
-  if (data?.session?.user) {
-    usuario = data.session.user;
-    await carregarPerfil();
+    abrirAppOffline();
     return;
   }
+
+  try {
+    const { data } = await client.auth.getSession();
+
+    if (data?.session?.user) {
+      usuario = data.session.user;
+      await carregarPerfil();
+      return;
+    }
+  } catch (e) {}
 
   if (sessaoOffline) {
     usuario = { id: sessaoOffline.id };
     perfil = sessaoOffline;
 
-    document.getElementById('loginTela').classList.add('hidden');
-    document.getElementById('appTela').classList.remove('hidden');
-
-    document.getElementById('saudacao').innerText = `Olá, ${perfil.nome}`;
-    document.getElementById('dadosUsuario').innerText =
-      `Sessão local | Setor: ${perfil.setor}`;
-
-    await configurarNovaParadaPorPerfil();
-    atualizarStatusConexao();
-    mostrarTela('novaParadaTela');
-    return;
+    abrirAppOffline();
   }
 });
+function abrirAppOffline() {
+  document.getElementById('loginTela').classList.add('hidden');
+  document.getElementById('appTela').classList.remove('hidden');
+
+  document.getElementById('saudacao').innerText =
+    `Olá, ${perfil.nome}`;
+
+  document.getElementById('dadosUsuario').innerText =
+    `Modo Offline | Setor: ${perfil.setor}`;
+
+  configurarNovaParadaPorPerfil();
+  mostrarTela('novaParadaTela');
+}
 </script>
 </body>
 </html>
