@@ -343,6 +343,15 @@ const STORAGE_FILA_PARADAS = 'fila_paradas_offline_v1';
 
         perfil = data;
 
+localStorage.setItem('sessaoOffline', JSON.stringify({
+  id: usuario.id,
+  nome: perfil.nome,
+  setor: perfil.setor,
+  cargo: perfil.cargo,
+  admin: perfil.admin,
+  multi_setor: perfil.multi_setor
+}));
+
         document.getElementById('loginTela').classList.add('hidden');
         document.getElementById('appTela').classList.remove('hidden');
 
@@ -1057,6 +1066,7 @@ async function abrirParada() {
       document.getElementById('appTela').classList.add('hidden');
       document.getElementById('loginTela').classList.remove('hidden');
       document.getElementById('loginMsg').innerHTML = '';
+localStorage.removeItem('sessaoOffline');
     }
 function estaOnline() {
   return navigator.onLine;
@@ -1280,18 +1290,34 @@ window.addEventListener('offline', () => {
 window.addEventListener('load', async () => {
   atualizarStatusConexao();
 
+if (!navigator.onLine) {
+  const sessao = JSON.parse(localStorage.getItem('sessaoOffline'));
+
+  if (sessao) {
+    usuario = { id: sessao.id };
+    perfil = sessao;
+
+    document.getElementById('loginTela').classList.add('hidden');
+    document.getElementById('appTela').classList.remove('hidden');
+
+    document.getElementById('saudacao').innerText = `Olá, ${perfil.nome}`;
+    document.getElementById('dadosUsuario').innerText =
+      `Modo Offline | Setor: ${perfil.setor}`;
+
+await configurarNovaParadaPorPerfil();
+atualizarStatusConexao();
+mostrarTela('novaParadaTela');
+return;
+
+     }
+}	
+
   const { data } = await client.auth.getSession();
 
   if (data?.session?.user) {
     usuario = data.session.user;
     await carregarPerfil();
   }
-});
-</script>  
-<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/service-worker.js');
-}
-</script>
+});  </script>
 </body>
 </html>
