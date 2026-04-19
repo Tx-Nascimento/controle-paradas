@@ -1,7 +1,20 @@
-self.addEventListener('install', () => {
-  console.log('Service Worker instalado');
+const CACHE = "paradas-v2";
+
+self.addEventListener("install", event => {
+  event.waitUntil(
+    caches.open(CACHE).then(cache => {
+      return cache.addAll([
+        "/",
+        "/index.html"
+      ]);
+    })
+  );
 });
 
-self.addEventListener('fetch', () => {
-  // simples (sem cache por enquanto)
+self.addEventListener("fetch", event => {
+  event.respondWith(
+    caches.match(event.request).then(response => {
+      return response || fetch(event.request);
+    })
+  );
 });
