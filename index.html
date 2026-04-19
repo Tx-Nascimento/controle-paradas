@@ -1165,15 +1165,15 @@ async function carregarHistorico() {
       }
     }
 
-    async function logout() {
-      await client.auth.signOut();
-      usuario = null;
-      perfil = null;
+function logout() {
+  usuario = null;
+  perfil = null;
 
-      document.getElementById('appTela').classList.add('hidden');
-      document.getElementById('loginTela').classList.remove('hidden');
-      document.getElementById('loginMsg').innerHTML = ''
-    }
+  document.getElementById('appTela').classList.add('hidden');
+  document.getElementById('loginTela').classList.remove('hidden');
+  document.getElementById('loginMsg').innerHTML = '';
+}
+
 function estaOnline() {
   return navigator.onLine;
 }
