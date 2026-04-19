@@ -1359,12 +1359,18 @@ async function carregarSetores() {
     .eq('ativo', true)
     .order('nome', { ascending: true });
 
-  if (error) return [];
+  if (!error && data) {
+    setoresCache = data;
+    localStorage.setItem('setoresCache', JSON.stringify(data));
+    return data;
+  }
 
-  setoresCache = data || [];
+  setoresCache = JSON.parse(
+    localStorage.getItem('setoresCache') || '[]'
+  );
+
   return setoresCache;
 }
-
 async function carregarMaquinasBase() {
   let query = client
     .from('maquinas')
