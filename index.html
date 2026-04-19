@@ -1,9 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#2563eb">
-  <link rel="apple-touch-icon" href="icon-192.png">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Controle de Paradas</title>
@@ -54,34 +51,18 @@
       font-weight: bold;
     }
 
-    button:hover {
-      opacity: .95;
-    }
-
-    .btn-secondary {
-      background: #6b7280;
-    }
-
-    .btn-danger {
-      background: #dc2626;
-    }
-
-    .btn-success {
-      background: #16a34a;
-    }
-
-    .grid-2, .grid-3, .grid-4, .menu {
-      display: grid;
-      gap: 12px;
-    }
-
+    button:hover { opacity: .95; }
+    .btn-secondary { background: #6b7280; }
+    .btn-danger { background: #dc2626; }
+    .btn-success { background: #16a34a; }
+    .grid-1 { grid-template-columns: 1fr; }
+    .grid-2, .grid-3, .grid-4, .menu { display: grid; gap: 12px; }
     .grid-2 { grid-template-columns: 1fr 1fr; }
     .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
     .grid-4 { grid-template-columns: repeat(4, 1fr); }
     .menu { grid-template-columns: repeat(5, 1fr); }
 
     .hidden { display: none; }
-
     .item {
       border: 1px solid #e5e7eb;
       border-radius: 12px;
@@ -98,15 +79,8 @@
       font-weight: bold;
     }
 
-    .aberta {
-      background: #fef3c7;
-      color: #92400e;
-    }
-
-    .finalizada {
-      background: #dcfce7;
-      color: #166534;
-    }
+    .aberta { background: #fef3c7; color: #92400e; }
+    .finalizada { background: #dcfce7; color: #166534; }
 
     .erro { color: #dc2626; font-weight: bold; }
     .ok { color: #16a34a; font-weight: bold; }
@@ -135,13 +109,7 @@
       vertical-align: top;
     }
 
-    th {
-      background: #f3f4f6;
-    }
-
-    .actions-col button {
-      margin-bottom: 6px;
-    }
+    th { background: #f3f4f6; }
 
     label.inline-check {
       display: flex;
@@ -172,7 +140,6 @@
 </head>
 <body>
   <div class="container">
-
     <div id="loginTela" class="card">
       <h1>Controle de Paradas</h1>
       <input type="email" id="email" placeholder="E-mail" />
@@ -197,31 +164,42 @@
         <button class="btn-secondary" onclick="logout()">Sair</button>
       </div>
 
-      <div id="novaParadaTela" class="card">
-        <h3>Nova parada</h3>
+<div id="novaParadaTela" class="card">
+  <h3>Nova parada</h3>
 
-        <div class="grid-2">
-          <input type="date" id="dataParada" />
-          <input type="text" id="setor" readonly />
-        </div>
+  <div class="grid-2" id="linhaSetorData">
+    <input type="date" id="dataParada" />
 
-        <select id="maquinaSelect"></select>
-        <textarea id="motivo" rows="4" placeholder="Motivo da parada"></textarea>
-        <input type="time" id="horaInicio" />
+    <select id="setorSelect" onchange="aoSelecionarSetor()">
+      <option value="">Selecione o setor</option>
+    </select>
+  </div>
 
-        <button onclick="abrirParada()">Abrir parada</button>
-        <div id="novaParadaMsg"></div>
-      </div>
+  <input type="text" id="setor" readonly />
 
-      <div id="abertasTela" class="card hidden">
-        <h3>Paradas em aberto</h3>
-        <div id="listaAbertas"></div>
-      </div>
+  <select id="maquinaSelect">
+    <option value="">Selecione a máquina</option>
+  </select>
 
-      <div id="historicoTela" class="card hidden">
-        <h3>Histórico</h3>
-        <div class="grid-3">
-          <input type="date" id="filtroInicioHistorico" />
+  <textarea id="motivo" rows="4" placeholder="Motivo da parada"></textarea>
+
+  <input type="time" id="horaInicio" />
+
+  <div id="statusConexao" class="small"></div>
+  <div id="filaOfflineInfo" class="small"></div>
+
+  <button onclick="abrirParada()">Abrir parada</button>
+
+  <div id="novaParadaMsg"></div>
+</div>
+<div id="abertasTela" class="card hidden">
+  <h3>Paradas em aberto</h3>
+  <div id="listaAbertas"></div>
+</div>
+<div id="historicoTela" class="card hidden">
+  <h3>Histórico</h3>
+
+  <div class="grid-3">          <input type="date" id="filtroInicioHistorico" />
           <input type="date" id="filtroFimHistorico" />
           <button onclick="carregarHistorico()">Aplicar filtro</button>
         </div>
@@ -261,13 +239,11 @@
           <input type="text" id="novoCargo" placeholder="Cargo" value="Lider" />
 
           <label class="inline-check">
-            <input type="checkbox" id="novoAdmin">
-            Administrador
+            <input type="checkbox" id="novoAdmin"> Administrador
           </label>
 
           <label class="inline-check">
-            <input type="checkbox" id="novoMultiSetor">
-            Pode lançar em qualquer setor
+            <input type="checkbox" id="novoMultiSetor"> Pode lançar em qualquer setor
           </label>
 
           <button onclick="criarUsuario()">Criar usuário</button>
@@ -303,9 +279,12 @@
     const { createClient } = supabase;
     const client = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    let usuario = null;
-    let perfil = null;
+let usuario = null;
+let perfil = null;
+let setoresCache = [];
+let maquinasCache = [];
 
+const STORAGE_FILA_PARADAS = 'fila_paradas_offline_v1';
     document.getElementById('dataParada').value = hojeISO();
     document.getElementById('filtroInicioHistorico').value = primeiroDiaMes();
     document.getElementById('filtroFimHistorico').value = hojeISO();
@@ -371,20 +350,22 @@
         document.getElementById('dadosUsuario').innerText =
           `Setor: ${perfil.setor} | Cargo: ${perfil.cargo} | Admin: ${perfil.admin ? 'Sim' : 'Não'} | Multi Setor: ${perfil.multi_setor ? 'Sim' : 'Não'}`;
 
-        document.getElementById('setor').value = perfil.setor || '';
+document.getElementById('setor').value = perfil.setor || '';
 
-        if (perfil.admin) {
-          document.getElementById('btnAdmin').classList.remove('hidden');
-          await carregarSetoresAdmin();
-        } else {
-          document.getElementById('btnAdmin').classList.add('hidden');
-        }
+if (perfil.admin) {
+  document.getElementById('btnAdmin').classList.remove('hidden');
+  await carregarSetoresAdmin();
+} else {
+  document.getElementById('btnAdmin').classList.add('hidden');
+}
 
-        await carregarMaquinas();
-        await carregarAbertas();
-        await carregarHistorico();
-        await carregarDashboard();
-
+await configurarNovaParadaPorPerfil();
+await carregarAbertas();
+await carregarHistorico();
+await carregarDashboard();
+atualizarStatusConexao();
+await pedirPermissaoNotificacaoWeb();
+await sincronizarFilaOffline();
       } catch (err) {
         msg.innerHTML = `<div class="erro">Falha ao abrir o app: ${err.message}</div>`;
       }
@@ -438,9 +419,7 @@
         const texto = await resp.text();
         let json = {};
 
-        try {
-          json = JSON.parse(texto);
-        } catch (_) {}
+        try { json = JSON.parse(texto); } catch (_) {}
 
         if (!resp.ok) {
           msg.innerHTML = `<div class="erro">Status ${resp.status}: ${json.error || texto || 'Erro ao criar usuário.'}</div>`;
@@ -497,18 +476,15 @@
           </div>
 
           <label class="inline-check">
-            <input type="checkbox" id="ativo_${u.id}" ${u.ativo ? 'checked' : ''}>
-            Ativo
+            <input type="checkbox" id="ativo_${u.id}" ${u.ativo ? 'checked' : ''}> Ativo
           </label>
 
           <label class="inline-check">
-            <input type="checkbox" id="admin_${u.id}" ${u.admin ? 'checked' : ''}>
-            Admin
+            <input type="checkbox" id="admin_${u.id}" ${u.admin ? 'checked' : ''}> Admin
           </label>
 
           <label class="inline-check">
-            <input type="checkbox" id="multi_${u.id}" ${u.multi_setor ? 'checked' : ''}>
-            Multi setor
+            <input type="checkbox" id="multi_${u.id}" ${u.multi_setor ? 'checked' : ''}> Multi setor
           </label>
 
           <div class="grid-2">
@@ -610,80 +586,87 @@
       }
     }
 
-    async function carregarMaquinas() {
-      const select = document.getElementById('maquinaSelect');
-      select.innerHTML = '<option value="">Selecione a máquina</option>';
+async function carregarMaquinas() {
+  await carregarMaquinasBase();
 
-      let query = client
-        .from('maquinas')
-        .select('id, nome, setor')
-        .eq('ativa', true)
-        .order('nome', { ascending: true });
+  if (!perfil.admin && !perfil.multi_setor) {
+    const maquinasFiltradas = maquinasCache.filter(m => m.setor === perfil.setor);
+    preencherMaquinas(maquinasFiltradas);
+    return;
+  }
 
-      if (!perfil.admin && !perfil.multi_setor) {
-        query = query.eq('setor', perfil.setor);
-      }
+  preencherMaquinas([]);
+}
+async function abrirParada() {
+  const select = document.getElementById('maquinaSelect');
+  const option = select.options[select.selectedIndex];
 
-      const { data, error } = await query;
+  const maquinaId = select.value;
+  const maquinaNome = option?.dataset?.nome || '';
+  const setorSelecionado = document.getElementById('setorSelect').value || option?.dataset?.setor || perfil.setor;
+  const dataParada = document.getElementById('dataParada').value;
+  const motivo = document.getElementById('motivo').value.trim();
+  const horaInicio = document.getElementById('horaInicio').value;
+  const msg = document.getElementById('novaParadaMsg');
 
-      if (error) {
-        select.innerHTML = '<option value="">Erro ao carregar máquinas</option>';
-        return;
-      }
+  msg.innerHTML = '';
 
-      data.forEach(m => {
-        select.innerHTML += `<option value="${m.id}" data-nome="${m.nome}" data-setor="${m.setor}">${m.nome} - ${m.setor}</option>`;
-      });
-    }
+  if (!maquinaId || !dataParada || !motivo || !horaInicio || !setorSelecionado) {
+    msg.innerHTML = `<div class="erro">Preencha todos os campos.</div>`;
+    return;
+  }
 
-    async function abrirParada() {
-      const select = document.getElementById('maquinaSelect');
-      const option = select.options[select.selectedIndex];
+  const payload = {
+    maquina_id: maquinaId,
+    maquina_nome: maquinaNome,
+    setor: setorSelecionado,
+    data_parada: dataParada,
+    motivo: motivo,
+    hora_inicio: horaInicio,
+    usuario_id: usuario.id,
+    usuario_nome: perfil.nome,
+    status: 'ABERTA'
+  };
 
-      const maquinaId = select.value;
-      const maquinaNome = option?.dataset?.nome || '';
-      const setorMaquina = option?.dataset?.setor || perfil.setor;
-      const dataParada = document.getElementById('dataParada').value;
-      const motivo = document.getElementById('motivo').value.trim();
-      const horaInicio = document.getElementById('horaInicio').value;
-      const msg = document.getElementById('novaParadaMsg');
+  if (!estaOnline()) {
+    adicionarFilaOffline(payload);
 
-      msg.innerHTML = '';
+    msg.innerHTML = `<div class="ok">Sem internet. Parada salva no app e será sincronizada depois.</div>`;
+    notificarNovaParada(
+      'Nova parada registrada',
+      `${maquinaNome} - ${setorSelecionado} (salva offline)`
+    );
 
-      if (!maquinaId || !dataParada || !motivo || !horaInicio) {
-        msg.innerHTML = `<div class="erro">Preencha todos os campos.</div>`;
-        return;
-      }
+    limparFormularioNovaParada();
+    await carregarAbertas();
+    await carregarHistorico();
+    await carregarDashboard();
+    return;
+  }
 
-      const { error } = await client
-        .from('paradas')
-        .insert([{
-          maquina_id: maquinaId,
-          maquina_nome: maquinaNome,
-          setor: setorMaquina,
-          data_parada: dataParada,
-          motivo: motivo,
-          hora_inicio: horaInicio,
-          usuario_id: usuario.id,
-          usuario_nome: perfil.nome
-        }]);
+  const { error } = await client
+    .from('paradas')
+    .insert([payload]);
 
-      if (error) {
-        msg.innerHTML = `<div class="erro">${error.message}</div>`;
-        return;
-      }
+  if (error) {
+    adicionarFilaOffline(payload);
+    msg.innerHTML = `<div class="erro">Falha online. A parada foi guardada no app para sincronizar depois.</div>`;
+    return;
+  }
 
-      msg.innerHTML = `<div class="ok">Parada aberta com sucesso.</div>`;
+  msg.innerHTML = `<div class="ok">Parada aberta com sucesso.</div>`;
 
-      document.getElementById('maquinaSelect').value = '';
-      document.getElementById('motivo').value = '';
-      document.getElementById('horaInicio').value = '';
+  notificarNovaParada(
+    'Nova parada registrada',
+    `${maquinaNome} - ${setorSelecionado}`
+  );
 
-      await carregarAbertas();
-      await carregarHistorico();
-      await carregarDashboard();
-    }
+  limparFormularioNovaParada();
 
+  await carregarAbertas();
+  await carregarHistorico();
+  await carregarDashboard();
+}
     async function carregarAbertas() {
       const div = document.getElementById('listaAbertas');
 
@@ -712,55 +695,22 @@
       div.innerHTML = '';
 
       data.forEach(item => {
-div.innerHTML += `
-<div class="item">
-<b>Máquina:</b> ${item.maquina_nome}<br>
-<b>Setor:</b> ${item.setor}<br>
-<b>Data parada:</b> ${item.data_parada}<br>
-<b>Hora início:</b> ${item.hora_inicio}<br>
-<b>Motivo:</b> ${item.motivo}<br>
-<b>Usuário:</b> ${item.usuario_nome}<br><br>
+        div.innerHTML += `
+          <div class="item">
+            <b>Máquina:</b> ${item.maquina_nome}<br>
+            <b>Setor:</b> ${item.setor}<br>
+            <b>Data parada:</b> ${item.data_parada}<br>
+            <b>Hora início:</b> ${item.hora_inicio}<br>
+            <b>Motivo:</b> ${item.motivo}<br>
+            <b>Usuário:</b> ${item.usuario_nome}<br><br>
 
-<input type="time" id="fim_${item.id}" />
-<textarea id="obs_${item.id}" rows="3" placeholder="Observação da resolução"></textarea>
-<button onclick="finalizarParada('${item.id}', '${item.hora_inicio}')">Finalizar parada</button>
-${perfil.admin ? `<button class="btn-danger" onclick="excluirParadaAdmin('${item.id}')">Excluir parada</button>` : ''}
-</div>
-`;
+            <input type="time" id="fim_${item.id}" />
+            <textarea id="obs_${item.id}" rows="3" placeholder="Observação da resolução"></textarea>
+            <button onclick="finalizarParada('${item.id}', '${item.hora_inicio}')">Finalizar parada</button>
+            ${perfil.admin ? `<button class="btn-danger" onclick="excluirParadaAdmin('${item.id}')">Excluir parada</button>` : ''}
+          </div>
+        `;
       });
-    }
-
-    async function finalizarParada(id, horaInicio) {
-      const horaFim = document.getElementById(`fim_${id}`).value;
-      const observacao = document.getElementById(`obs_${id}`).value.trim();
-
-      if (!horaFim) {
-        alert('Informe a hora final.');
-        return;
-      }
-
-      const duracao = calcularDuracaoMin(horaInicio, horaFim);
-
-      const { error } = await client
-        .from('paradas')
-        .update({
-          hora_fim: horaFim,
-          observacao: observacao,
-          status: 'FINALIZADA',
-          duracao_min: duracao
-        })
-        .eq('id', id);
-
-      if (error) {
-        alert(error.message);
-        return;
-      }
-
-      alert('Parada finalizada com sucesso.');
-
-      await carregarAbertas();
-      await carregarHistorico();
-      await carregarDashboard();
     }
 
     async function carregarHistorico() {
@@ -797,20 +747,54 @@ ${perfil.admin ? `<button class="btn-danger" onclick="excluirParadaAdmin('${item
         const classe = item.status === 'ABERTA' ? 'aberta' : 'finalizada';
 
         lista.innerHTML += `
-  <div class="item">
-    <span class="badge ${classe}">${item.status}</span><br><br>
-    <b>Máquina:</b> ${item.maquina_nome}<br>
-    <b>Setor:</b> ${item.setor}<br>
-    <b>Data parada:</b> ${item.data_parada}<br>
-    <b>Motivo:</b> ${item.motivo}<br>
-    <b>Início:</b> ${item.hora_inicio || '-'}<br>
-    <b>Fim:</b> ${item.hora_fim || '-'}<br>
-    <b>Duração:</b> ${minutosParaHora(item.duracao_min || 0)}<br>
-    <b>Observação:</b> ${item.observacao || '-'}<br>
-    <b>Usuário:</b> ${item.usuario_nome}
-    ${perfil.admin ? `<br><br><button class="btn-danger" onclick="excluirParadaAdmin('${item.id}')">Excluir parada</button>` : ''}
-  </div>
-`;      });
+          <div class="item">
+            <span class="badge ${classe}">${item.status}</span><br><br>
+            <b>Máquina:</b> ${item.maquina_nome}<br>
+            <b>Setor:</b> ${item.setor}<br>
+            <b>Data parada:</b> ${item.data_parada}<br>
+            <b>Motivo:</b> ${item.motivo}<br>
+            <b>Início:</b> ${item.hora_inicio || '-'}<br>
+            <b>Fim:</b> ${item.hora_fim || '-'}<br>
+            <b>Duração:</b> ${minutosParaHora(item.duracao_min || 0)}<br>
+            <b>Observação:</b> ${item.observacao || '-'}<br>
+            <b>Usuário:</b> ${item.usuario_nome}
+            ${perfil.admin ? `<br><br><button class="btn-danger" onclick="excluirParadaAdmin('${item.id}')">Excluir parada</button>` : ''}
+          </div>
+        `;
+      });
+    }
+
+    async function finalizarParada(id, horaInicio) {
+      const horaFim = document.getElementById(`fim_${id}`).value;
+      const observacao = document.getElementById(`obs_${id}`).value.trim();
+
+      if (!horaFim) {
+        alert('Informe a hora final.');
+        return;
+      }
+
+      const duracao = calcularDuracaoMin(horaInicio, horaFim);
+
+      const { error } = await client
+        .from('paradas')
+        .update({
+          hora_fim: horaFim,
+          observacao: observacao,
+          status: 'FINALIZADA',
+          duracao_min: duracao
+        })
+        .eq('id', id);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      alert('Parada finalizada com sucesso.');
+
+      await carregarAbertas();
+      await carregarHistorico();
+      await carregarDashboard();
     }
 
     async function carregarDashboard() {
@@ -989,16 +973,6 @@ ${perfil.admin ? `<button class="btn-danger" onclick="excluirParadaAdmin('${item
       document.getElementById(id).classList.remove('hidden');
     }
 
-    async function logout() {
-      await client.auth.signOut();
-      usuario = null;
-      perfil = null;
-
-      document.getElementById('appTela').classList.add('hidden');
-      document.getElementById('loginTela').classList.remove('hidden');
-      document.getElementById('loginMsg').innerHTML = '';
-    }
-
     function hojeISO() {
       const hoje = new Date();
       return hoje.toISOString().slice(0, 10);
@@ -1030,62 +1004,280 @@ ${perfil.admin ? `<button class="btn-danger" onclick="excluirParadaAdmin('${item
 
       return String(horas).padStart(2, '0') + ':' + String(minutos).padStart(2, '0');
     }
-async function excluirParadaAdmin(paradaId) {
-  const confirmar = confirm('Deseja realmente excluir esta parada?');
-  if (!confirmar) return;
 
+    async function excluirParadaAdmin(paradaId) {
+      const confirmar = confirm('Deseja realmente excluir esta parada?');
+      if (!confirmar) return;
+
+      try {
+        const { data: sessao, error: erroSessao } = await client.auth.getSession();
+
+        if (erroSessao || !sessao?.session?.access_token) {
+          alert('Sessão inválida. Faça login novamente.');
+          return;
+        }
+
+        const accessToken = sessao.session.access_token;
+
+        const resp = await fetch('https://mzawmvqrlrptidcwxkoi.supabase.co/functions/v1/excluir-parada', {
+          method: 'POST',
+          mode: 'cors',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': SUPABASE_KEY
+          },
+          body: JSON.stringify({ parada_id: paradaId })
+        });
+
+        const texto = await resp.text();
+        let json = {};
+        try { json = JSON.parse(texto); } catch (_) {}
+
+        if (!resp.ok) {
+          alert(json.error || texto || 'Erro ao excluir parada.');
+          return;
+        }
+
+        alert(json.message || 'Parada excluída com sucesso.');
+        await carregarAbertas();
+        await carregarHistorico();
+        await carregarDashboard();
+
+      } catch (err) {
+        alert(`Erro de conexão: ${err.message}`);
+      }
+    }
+
+    async function logout() {
+      await client.auth.signOut();
+      usuario = null;
+      perfil = null;
+
+      document.getElementById('appTela').classList.add('hidden');
+      document.getElementById('loginTela').classList.remove('hidden');
+      document.getElementById('loginMsg').innerHTML = '';
+    }
+function estaOnline() {
+  return navigator.onLine;
+}
+
+function atualizarStatusConexao() {
+  const el = document.getElementById('statusConexao');
+  if (!el) return;
+
+  if (estaOnline()) {
+    el.innerHTML = '<span class="ok">🟢 Online</span>';
+  } else {
+    el.innerHTML = '<span class="erro">🔴 Offline</span>';
+  }
+
+  atualizarInfoFilaOffline();
+}
+
+function lerFilaOffline() {
   try {
-    const { data: sessao, error: erroSessao } = await client.auth.getSession();
-
-    if (erroSessao || !sessao?.session?.access_token) {
-      alert('Sessão inválida. Faça login novamente.');
-      return;
-    }
-
-    const accessToken = sessao.session.access_token;
-
-    const resp = await fetch('https://mzawmvqrlrptidcwxkoi.supabase.co/functions/v1/excluir-parada', {
-      method: 'POST',
-      mode: 'cors',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-        'apikey': SUPABASE_KEY
-      },
-      body: JSON.stringify({ parada_id: paradaId })
-    });
-
-    const texto = await resp.text();
-    let json = {};
-    try { json = JSON.parse(texto); } catch (_) {}
-
-    if (!resp.ok) {
-      alert(json.error || texto || 'Erro ao excluir parada.');
-      return;
-    }
-
-    alert(json.message || 'Parada excluída com sucesso.');
-    await carregarAbertas();
-    await carregarHistorico();
-    await carregarDashboard();
-
-  } catch (err) {
-    alert(`Erro de conexão: ${err.message}`);
+    return JSON.parse(localStorage.getItem(STORAGE_FILA_PARADAS) || '[]');
+  } catch {
+    return [];
   }
 }
-    window.addEventListener('load', async () => {
-      const { data } = await client.auth.getSession();
 
-      if (data?.session?.user) {
-        usuario = data.session.user;
-        await carregarPerfil();
-      }
-    });
-// SERVICE WORKER
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('service-worker.js')
-    .then(() => console.log('PWA ativo'));
+function salvarFilaOffline(lista) {
+  localStorage.setItem(STORAGE_FILA_PARADAS, JSON.stringify(lista));
+  atualizarInfoFilaOffline();
 }
-  </script>
+
+function adicionarFilaOffline(item) {
+  const fila = lerFilaOffline();
+  fila.push({
+    ...item,
+    offline_id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    criado_em_local: new Date().toISOString()
+  });
+  salvarFilaOffline(fila);
+}
+
+function atualizarInfoFilaOffline() {
+  const el = document.getElementById('filaOfflineInfo');
+  if (!el) return;
+
+  const fila = lerFilaOffline();
+  if (!fila.length) {
+    el.innerHTML = 'Sem pendências offline.';
+    return;
+  }
+
+  el.innerHTML = `${fila.length} parada(s) pendente(s) para sincronizar.`;
+}
+
+async function sincronizarFilaOffline() {
+  if (!estaOnline()) return;
+
+  const fila = lerFilaOffline();
+  if (!fila.length) return;
+
+  const restantes = [];
+
+  for (const item of fila) {
+    try {
+      const { error } = await client
+        .from('paradas')
+        .insert([{
+          maquina_id: item.maquina_id,
+          maquina_nome: item.maquina_nome,
+          setor: item.setor,
+          data_parada: item.data_parada,
+          motivo: item.motivo,
+          hora_inicio: item.hora_inicio,
+          usuario_id: item.usuario_id,
+          usuario_nome: item.usuario_nome,
+          status: 'ABERTA'
+        }]);
+
+      if (error) {
+        restantes.push(item);
+      }
+    } catch {
+      restantes.push(item);
+    }
+  }
+
+  salvarFilaOffline(restantes);
+
+  await carregarAbertas();
+  await carregarHistorico();
+  await carregarDashboard();
+}
+
+async function pedirPermissaoNotificacaoWeb() {
+  if (!('Notification' in window)) return;
+
+  if (Notification.permission === 'default') {
+    try {
+      await Notification.requestPermission();
+    } catch {}
+  }
+}
+
+function notificarNovaParada(titulo, corpo) {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    try {
+      new Notification(titulo, { body: corpo });
+    } catch {}
+  }
+}
+
+function limparFormularioNovaParada() {
+  document.getElementById('maquinaSelect').value = '';
+  document.getElementById('motivo').value = '';
+  document.getElementById('horaInicio').value = '';
+}
+
+function preencherSetores(setores) {
+  const select = document.getElementById('setorSelect');
+  const inputSetor = document.getElementById('setor');
+
+  select.innerHTML = '<option value="">Selecione o setor</option>';
+
+  setores.forEach(s => {
+    select.innerHTML += `<option value="${s.nome}">${s.nome}</option>`;
+  });
+
+  inputSetor.value = '';
+}
+function preencherMaquinas(maquinas) {
+  const select = document.getElementById('maquinaSelect');
+  select.innerHTML = '<option value="">Selecione a máquina</option>';
+
+  maquinas.forEach(m => {
+    select.innerHTML += `<option value="${m.id}" data-nome="${m.nome}" data-setor="${m.setor}" >${m.nome} - ${m.setor}</option>`;
+  });
+}
+
+async function carregarSetores() {
+  const { data, error } = await client
+    .from('setores')
+    .select('*')
+    .eq('ativo', true)
+    .order('nome', { ascending: true });
+
+  if (error) return [];
+
+  setoresCache = data || [];
+  return setoresCache;
+}
+
+async function carregarMaquinasBase() {
+  let query = client
+    .from('maquinas')
+     .select('id, nome, setor, ativa')
+    .eq('ativa', true)
+    .order('nome', { ascending: true });
+
+  const { data, error } = await query;
+
+  if (error) return [];
+
+  maquinasCache = data || [];
+  return maquinasCache;
+}
+
+function aoSelecionarSetor() {
+  const setor = document.getElementById('setorSelect').value;
+  document.getElementById('setor').value = setor || '';
+
+  const maquinasFiltradas = maquinasCache.filter(m => m.setor === setor);
+  preencherMaquinas(maquinasFiltradas);
+}
+
+async function configurarNovaParadaPorPerfil() {
+  await carregarSetores();
+  await carregarMaquinasBase();
+
+  const selectSetor = document.getElementById('setorSelect');
+  const inputSetor = document.getElementById('setor');
+  const linha = document.getElementById('linhaSetorData');
+
+  if (perfil.multi_setor || perfil.admin) {
+    linha.className = 'grid-2';
+
+    selectSetor.style.display = 'block';
+    inputSetor.style.display = 'none';
+
+    preencherSetores(setoresCache);
+    preencherMaquinas([]);
+
+  } else {
+    linha.className = 'grid-2';
+
+    selectSetor.style.display = 'none';
+    inputSetor.style.display = 'block';
+
+    const setorUsuario = perfil.setor || '';
+    inputSetor.value = setorUsuario;
+
+    const maquinasUsuario = maquinasCache.filter(m => m.setor === setorUsuario);
+    preencherMaquinas(maquinasUsuario);
+  }
+}window.addEventListener('online', async () => {
+  atualizarStatusConexao();
+  await sincronizarFilaOffline();
+});
+
+window.addEventListener('offline', () => {
+  atualizarStatusConexao();
+});
+
+window.addEventListener('load', async () => {
+  atualizarStatusConexao();
+
+  const { data } = await client.auth.getSession();
+
+  if (data?.session?.user) {
+    usuario = data.session.user;
+    await carregarPerfil();
+  }
+});  </script>
 </body>
 </html>
