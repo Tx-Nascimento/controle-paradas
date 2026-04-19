@@ -1191,10 +1191,16 @@ function preencherMaquinas(maquinas) {
   select.innerHTML = '<option value="">Selecione a máquina</option>';
 
   maquinas.forEach(m => {
-    select.innerHTML += `<option value="${m.id}" data-nome="${m.nome}" data-setor="${m.setor}" >${m.nome} - ${m.setor}</option>`;
+    select.innerHTML += `
+      <option 
+        value="${m.id}" 
+        data-nome="${m.nome}" 
+        data-setor="${m.setor}">
+        ${m.nome}
+      </option>
+    `;
   });
 }
-
 async function carregarSetores() {
   const { data, error } = await client
     .from('setores')
