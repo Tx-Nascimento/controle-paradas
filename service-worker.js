@@ -1,42 +1,38 @@
-const CACHE = "paradas-v4";
+const CACHE = "paradas-v5";
 
 self.addEventListener("install", event => {
   event.waitUntil(
-    caches.open(CACHE).then(cache => {
-      return cache.addAll([
+    caches.open(CACHE).then(cache =>
+      cache.addAll([
         "/",
         "/index.html",
         "/manifest.json",
         "/icon-192.png",
-        "/icon-512.png",
-        "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
-      ]);
-    })
+        "/icon-512.png"
+      ])
+    )
   );
-
   self.skipWaiting();
 });
 
 self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys.map(key => {
-          if (key !== CACHE) return caches.delete(key);
-        })
-      )
-    )
-  );
-
-  self.clients.claim();
+  event.waitUntil(self.clients.claim());
 });
 
 self.addEventListener("fetch", event => {
-  event.respondWith(
-    caches.match(event.request).then(response => {
-      if (response) return response;
+  const url = new URL(event.request.url);
 
-      return fetch(event.request).catch(() => caches.match("/index.html"));
+  // NÃO intercepta Supabase/API externas
+  if (
+    url.hostname.includes("supabase.co") ||
+    url.hostname.includes("jsdelivr.net")
+  ) {
+    return;
+  }
+
+  event.respondWith(
+    caches.match(event.request).then(resp => {
+      return resp || fetch(event.request).catch(() => caches.match("/index.html"));
     })
   );
 });
