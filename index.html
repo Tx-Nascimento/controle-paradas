@@ -277,8 +277,13 @@
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im16YXdtdnFybHJwdGlkY3d4a29pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1NzU4ODQsImV4cCI6MjA4OTE1MTg4NH0.mdl00txGN4GpXdLsgeANS1m05iTeQaO76jo7yggp004';
 
     const { createClient } = supabase;
-    const client = createClient(SUPABASE_URL, SUPABASE_KEY);
-
+const client = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+});
 let usuario = null;
 let perfil = null;
 let setoresCache = [];
@@ -1426,34 +1431,33 @@ window.addEventListener('offline', () => {
 window.addEventListener('load', async () => {
   atualizarStatusConexao();
 
-if (!navigator.onLine) {
-  const sessao = JSON.parse(localStorage.getItem('sessaoOffline'));
-
-  if (sessao) {
-    usuario = { id: sessao.id };
-    perfil = sessao;
-
-    document.getElementById('loginTela').classList.add('hidden');
-    document.getElementById('appTela').classList.remove('hidden');
-
-    document.getElementById('saudacao').innerText = `Olá, ${perfil.nome}`;
-    document.getElementById('dadosUsuario').innerText =
-      `Modo Offline | Setor: ${perfil.setor}`;
-
-await configurarNovaParadaPorPerfil();
-atualizarStatusConexao();
-mostrarTela('novaParadaTela');
-return;
-
-     }
-}	
+  const sessaoOffline = JSON.parse(localStorage.getItem('sessaoOffline') || 'null');
 
   const { data } = await client.auth.getSession();
 
   if (data?.session?.user) {
     usuario = data.session.user;
     await carregarPerfil();
+    return;
   }
-});  </script>
+
+  if (sessaoOffline) {
+    usuario = { id: sessaoOffline.id };
+    perfil = sessaoOffline;
+
+    document.getElementById('loginTela').classList.add('hidden');
+    document.getElementById('appTela').classList.remove('hidden');
+
+    document.getElementById('saudacao').innerText = `Olá, ${perfil.nome}`;
+    document.getElementById('dadosUsuario').innerText =
+      `Sessão local | Setor: ${perfil.setor}`;
+
+    await configurarNovaParadaPorPerfil();
+    atualizarStatusConexao();
+    mostrarTela('novaParadaTela');
+    return;
+  }
+});
+</script>
 </body>
 </html>
