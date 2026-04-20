@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Paradas">
+<link rel="apple-touch-icon" href="icon-192.png">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Controle de Paradas</title>
@@ -277,20 +283,14 @@
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im16YXdtdnFybHJwdGlkY3d4a29pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1NzU4ODQsImV4cCI6MjA4OTE1MTg4NH0.mdl00txGN4GpXdLsgeANS1m05iTeQaO76jo7yggp004';
 
     const { createClient } = supabase;
-const client = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true
-  }
-});
+    const client = createClient(SUPABASE_URL, SUPABASE_KEY);
+
 let usuario = null;
 let perfil = null;
 let setoresCache = [];
 let maquinasCache = [];
 
 const STORAGE_FILA_PARADAS = 'fila_paradas_offline_v1';
-const STORAGE_FINALIZADAS_OFFLINE = 'paradas_finalizadas_offline_v1';
     document.getElementById('dataParada').value = hojeISO();
     document.getElementById('filtroInicioHistorico').value = primeiroDiaMes();
     document.getElementById('filtroFimHistorico').value = hojeISO();
@@ -348,15 +348,6 @@ const STORAGE_FINALIZADAS_OFFLINE = 'paradas_finalizadas_offline_v1';
         }
 
         perfil = data;
-
-localStorage.setItem('sessaoOffline', JSON.stringify({
-  id: usuario.id,
-  nome: perfil.nome,
-  setor: perfil.setor,
-  cargo: perfil.cargo,
-  admin: perfil.admin,
-  multi_setor: perfil.multi_setor
-}));
 
         document.getElementById('loginTela').classList.add('hidden');
         document.getElementById('appTela').classList.remove('hidden');
@@ -682,204 +673,103 @@ async function abrirParada() {
   await carregarHistorico();
   await carregarDashboard();
 }
-async function carregarAbertas() {
-  const div = document.getElementById('listaAbertas');
+    async function carregarAbertas() {
+      const div = document.getElementById('listaAbertas');
 
-  if (!estaOnline()) {
-    const fila = lerFilaOffline();
+      let query = client
+        .from('paradas')
+        .select('*')
+        .eq('status', 'ABERTA')
+        .order('data_lancamento', { ascending: false });
 
-    if (!fila.length) {
-      div.innerHTML = '<p>Nenhuma parada em aberto offline.</p>';
-      return;
+      if (!perfil.admin && !perfil.multi_setor) {
+        query = query.eq('setor', perfil.setor);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        div.innerHTML = `<div class="erro">${error.message}</div>`;
+        return;
+      }
+
+      if (!data.length) {
+        div.innerHTML = '<p>Nenhuma parada em aberto.</p>';
+        return;
+      }
+
+      div.innerHTML = '';
+
+      data.forEach(item => {
+        div.innerHTML += `
+          <div class="item">
+            <b>Máquina:</b> ${item.maquina_nome}<br>
+            <b>Setor:</b> ${item.setor}<br>
+            <b>Data parada:</b> ${item.data_parada}<br>
+            <b>Hora início:</b> ${item.hora_inicio}<br>
+            <b>Motivo:</b> ${item.motivo}<br>
+            <b>Usuário:</b> ${item.usuario_nome}<br><br>
+
+            <input type="time" id="fim_${item.id}" />
+            <textarea id="obs_${item.id}" rows="3" placeholder="Observação da resolução"></textarea>
+            <button onclick="finalizarParada('${item.id}', '${item.hora_inicio}')">Finalizar parada</button>
+            ${perfil.admin ? `<button class="btn-danger" onclick="excluirParadaAdmin('${item.id}')">Excluir parada</button>` : ''}
+          </div>
+        `;
+      });
     }
 
-    div.innerHTML = '';
+    async function carregarHistorico() {
+      const lista = document.getElementById('listaHistorico');
+      const inicio = document.getElementById('filtroInicioHistorico').value;
+      const fim = document.getElementById('filtroFimHistorico').value;
 
-    fila.forEach(item => {
-      div.innerHTML += `
-        <div class="item">
-          <b>Máquina:</b> ${item.maquina_nome}<br>
-          <b>Setor:</b> ${item.setor}<br>
-          <b>Data parada:</b> ${item.data_parada}<br>
-          <b>Hora início:</b> ${item.hora_inicio}<br>
-          <b>Motivo:</b> ${item.motivo}<br>
-          <span class="badge aberta">OFFLINE</span><br><br>
+      let query = client
+        .from('paradas')
+        .select('*')
+        .gte('data_parada', inicio)
+        .lte('data_parada', fim)
+        .order('data_lancamento', { ascending: false });
 
-<input type="time" id="fim_${item.offline_id}" />
+      if (!perfil.admin && !perfil.multi_setor) {
+        query = query.eq('setor', perfil.setor);
+      }
 
-<textarea id="obs_${item.offline_id}" rows="3" placeholder="Observação"></textarea>
+      const { data, error } = await query;
 
-<button onclick="finalizarOffline('${item.offline_id}', '${item.hora_inicio}')">
-Finalizar parada
-</button>
-        </div>
-      `;
-    });
+      if (error) {
+        lista.innerHTML = `<div class="erro">${error.message}</div>`;
+        return;
+      }
 
-    return;
-  }
+      if (!data.length) {
+        lista.innerHTML = '<p>Sem histórico no período.</p>';
+        return;
+      }
 
-  let query = client
-    .from('paradas')
-    .select('*')
-    .eq('status', 'ABERTA')
-    .order('data_lancamento', { ascending: false });
+      lista.innerHTML = '';
 
-  if (!perfil.admin && !perfil.multi_setor) {
-    query = query.eq('setor', perfil.setor);
-  }
+      data.forEach(item => {
+        const classe = item.status === 'ABERTA' ? 'aberta' : 'finalizada';
 
-  const { data, error } = await query;
-
-  if (error) {
-    div.innerHTML = `<div class="erro">${error.message}</div>`;
-    return;
-  }
-
-  if (!data.length) {
-    div.innerHTML = '<p>Nenhuma parada em aberto.</p>';
-    return;
-  }
-
-  div.innerHTML = '';
-
-  data.forEach(item => {
-    div.innerHTML += `
-      <div class="item">
-        <b>Máquina:</b> ${item.maquina_nome}<br>
-        <b>Setor:</b> ${item.setor}<br>
-        <b>Data parada:</b> ${item.data_parada}<br>
-        <b>Hora início:</b> ${item.hora_inicio}<br>
-        <b>Motivo:</b> ${item.motivo}<br>
-        <b>Usuário:</b> ${item.usuario_nome}<br><br>
-
-        <input type="time" id="fim_${item.id}" />
-        <textarea id="obs_${item.id}" rows="3" placeholder="Observação da resolução"></textarea>
-        <button onclick="finalizarParada('${item.id}', '${item.hora_inicio}')">Finalizar parada</button>
-        ${perfil.admin ? `<button class="btn-danger" onclick="excluirParadaAdmin('${item.id}')">Excluir parada</button>` : ''}
-      </div>
-    `;
-  });
-}
-async function carregarHistorico() {
-  const lista = document.getElementById('listaHistorico');
-
-  const inicio = document.getElementById('filtroInicioHistorico').value;
-  const fim = document.getElementById('filtroFimHistorico').value;
-
-  if (!estaOnline()) {
-    let data = JSON.parse(localStorage.getItem(STORAGE_FINALIZADAS_OFFLINE) || '[]');
-
-    if (!data.length) {
-      lista.innerHTML = '<p>Sem histórico offline.</p>';
-      return;
+        lista.innerHTML += `
+          <div class="item">
+            <span class="badge ${classe}">${item.status}</span><br><br>
+            <b>Máquina:</b> ${item.maquina_nome}<br>
+            <b>Setor:</b> ${item.setor}<br>
+            <b>Data parada:</b> ${item.data_parada}<br>
+            <b>Motivo:</b> ${item.motivo}<br>
+            <b>Início:</b> ${item.hora_inicio || '-'}<br>
+            <b>Fim:</b> ${item.hora_fim || '-'}<br>
+            <b>Duração:</b> ${minutosParaHora(item.duracao_min || 0)}<br>
+            <b>Observação:</b> ${item.observacao || '-'}<br>
+            <b>Usuário:</b> ${item.usuario_nome}
+            ${perfil.admin ? `<br><br><button class="btn-danger" onclick="excluirParadaAdmin('${item.id}')">Excluir parada</button>` : ''}
+          </div>
+        `;
+      });
     }
 
-    lista.innerHTML = '';
-
-    data.reverse().forEach(item => {
-      lista.innerHTML += `
-        <div class="item">
-          <span class="badge finalizada">FINALIZADA</span><br><br>
-
-          <b>Máquina:</b> ${item.maquina_nome}<br>
-          <b>Setor:</b> ${item.setor}<br>
-          <b>Data parada:</b> ${item.data_parada}<br>
-          <b>Motivo:</b> ${item.motivo}<br>
-          <b>Início:</b> ${item.hora_inicio}<br>
-          <b>Fim:</b> ${item.hora_fim}<br>
-          <b>Duração:</b> ${minutosParaHora(item.duracao_min)}<br>
-          <b>Observação:</b> ${item.observacao || '-'}<br>
-          <b>Usuário:</b> ${item.usuario_nome || perfil.nome}
-        </div>
-      `;
-    });
-
-    return;
-  }
-
-  let query = client
-    .from('paradas')
-    .select('*')
-    .gte('data_parada', inicio)
-    .lte('data_parada', fim)
-    .order('data_lancamento', { ascending: false });
-
-  if (!perfil.admin && !perfil.multi_setor) {
-    query = query.eq('setor', perfil.setor);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    lista.innerHTML = `<div class="erro">${error.message}</div>`;
-    return;
-  }
-
-  if (!data.length) {
-    lista.innerHTML = '<p>Sem histórico no período.</p>';
-    return;
-  }
-
-  lista.innerHTML = '';
-
-  data.forEach(item => {
-    const classe = item.status === 'ABERTA' ? 'aberta' : 'finalizada';
-
-    lista.innerHTML += `
-      <div class="item">
-        <span class="badge ${classe}">${item.status}</span><br><br>
-
-        <b>Máquina:</b> ${item.maquina_nome}<br>
-        <b>Setor:</b> ${item.setor}<br>
-        <b>Data parada:</b> ${item.data_parada}<br>
-        <b>Motivo:</b> ${item.motivo}<br>
-        <b>Início:</b> ${item.hora_inicio || '-'}<br>
-        <b>Fim:</b> ${item.hora_fim || '-'}<br>
-        <b>Duração:</b> ${minutosParaHora(item.duracao_min || 0)}<br>
-        <b>Observação:</b> ${item.observacao || '-'}<br>
-        <b>Usuário:</b> ${item.usuario_nome}
-
-        ${perfil.admin ? `<br><br><button class="btn-danger" onclick="excluirParadaAdmin('${item.id}')">Excluir parada</button>` : ''}
-      </div>
-    `;
-  });
-}function finalizarOffline(id, horaInicio) {
-  const horaFim = document.getElementById(`fim_${id}`).value;
-  const obs = document.getElementById(`obs_${id}`).value.trim();
-
-  if (!horaFim) {
-    alert('Informe a hora final.');
-    return;
-  }
-
-  let fila = lerFilaOffline();
-
-  const item = fila.find(x => x.offline_id === id);
-
-  if (!item) return;
-
-  const finalizada = {
-    ...item,
-    hora_fim: horaFim,
-    observacao: obs,
-    status: 'FINALIZADA',
-    duracao_min: calcularDuracaoMin(horaInicio, horaFim)
-  };
-
-  fila = fila.filter(x => x.offline_id !== id);
-
-  salvarFilaOffline(fila);
-
-  let hist = JSON.parse(localStorage.getItem(STORAGE_FINALIZADAS_OFFLINE) || '[]');
-  hist.push(finalizada);
-
-  localStorage.setItem(STORAGE_FINALIZADAS_OFFLINE, JSON.stringify(hist));
-
-  carregarAbertas();
-
-  alert('Parada finalizada offline.');
-}
     async function finalizarParada(id, horaInicio) {
       const horaFim = document.getElementById(`fim_${id}`).value;
       const observacao = document.getElementById(`obs_${id}`).value.trim();
@@ -1165,15 +1055,15 @@ async function carregarHistorico() {
       }
     }
 
-function logout() {
-  usuario = null;
-  perfil = null;
+    async function logout() {
+      await client.auth.signOut();
+      usuario = null;
+      perfil = null;
 
-  document.getElementById('appTela').classList.add('hidden');
-  document.getElementById('loginTela').classList.remove('hidden');
-  document.getElementById('loginMsg').innerHTML = '';
-}
-
+      document.getElementById('appTela').classList.add('hidden');
+      document.getElementById('loginTela').classList.remove('hidden');
+      document.getElementById('loginMsg').innerHTML = '';
+    }
 function estaOnline() {
   return navigator.onLine;
 }
@@ -1230,9 +1120,10 @@ function atualizarInfoFilaOffline() {
 async function sincronizarFilaOffline() {
   if (!estaOnline()) return;
 
-  // ---------- ABERTAS ----------
-  let fila = lerFilaOffline();
-  let restantes = [];
+  const fila = lerFilaOffline();
+  if (!fila.length) return;
+
+  const restantes = [];
 
   for (const item of fila) {
     try {
@@ -1250,8 +1141,9 @@ async function sincronizarFilaOffline() {
           status: 'ABERTA'
         }]);
 
-      if (error) restantes.push(item);
-
+      if (error) {
+        restantes.push(item);
+      }
     } catch {
       restantes.push(item);
     }
@@ -1259,48 +1151,11 @@ async function sincronizarFilaOffline() {
 
   salvarFilaOffline(restantes);
 
-  // ---------- FINALIZADAS ----------
-  let finalizadas = JSON.parse(
-    localStorage.getItem(STORAGE_FINALIZADAS_OFFLINE) || '[]'
-  );
-
-  let restantesFinalizadas = [];
-
-  for (const item of finalizadas) {
-    try {
-      const { error } = await client
-        .from('paradas')
-        .insert([{
-          maquina_id: item.maquina_id,
-          maquina_nome: item.maquina_nome,
-          setor: item.setor,
-          data_parada: item.data_parada,
-          motivo: item.motivo,
-          hora_inicio: item.hora_inicio,
-          hora_fim: item.hora_fim,
-          observacao: item.observacao,
-          usuario_id: item.usuario_id,
-          usuario_nome: item.usuario_nome,
-          status: 'FINALIZADA',
-          duracao_min: item.duracao_min
-        }]);
-
-      if (error) restantesFinalizadas.push(item);
-
-    } catch {
-      restantesFinalizadas.push(item);
-    }
-  }
-
-  localStorage.setItem(
-    STORAGE_FINALIZADAS_OFFLINE,
-    JSON.stringify(restantesFinalizadas)
-  );
-
   await carregarAbertas();
   await carregarHistorico();
   await carregarDashboard();
 }
+
 async function pedirPermissaoNotificacaoWeb() {
   if (!('Notification' in window)) return;
 
@@ -1359,18 +1214,12 @@ async function carregarSetores() {
     .eq('ativo', true)
     .order('nome', { ascending: true });
 
-  if (!error && data) {
-    setoresCache = data;
-    localStorage.setItem('setoresCache', JSON.stringify(data));
-    return data;
-  }
+  if (error) return [];
 
-  setoresCache = JSON.parse(
-    localStorage.getItem('setoresCache') || '[]'
-  );
-
+  setoresCache = data || [];
   return setoresCache;
 }
+
 async function carregarMaquinasBase() {
   let query = client
     .from('maquinas')
@@ -1423,63 +1272,30 @@ async function configurarNovaParadaPorPerfil() {
     const maquinasUsuario = maquinasCache.filter(m => m.setor === setorUsuario);
     preencherMaquinas(maquinasUsuario);
   }
-}
-
-window.addEventListener('online', async () => {
+}window.addEventListener('online', async () => {
   atualizarStatusConexao();
   await sincronizarFilaOffline();
 });
 
 window.addEventListener('offline', () => {
   atualizarStatusConexao();
-
-  if (perfil) {
-    abrirAppOffline();
-  }
 });
+
 window.addEventListener('load', async () => {
   atualizarStatusConexao();
 
-  const sessaoOffline =
-    JSON.parse(localStorage.getItem('sessaoOffline') || 'null');
+  const { data } = await client.auth.getSession();
 
-  if (!navigator.onLine && sessaoOffline) {
-    usuario = { id: sessaoOffline.id };
-    perfil = sessaoOffline;
-
-    abrirAppOffline();
-    return;
+  if (data?.session?.user) {
+    usuario = data.session.user;
+    await carregarPerfil();
   }
+}); 
+</script>
 
-  try {
-    const { data } = await client.auth.getSession();
-
-    if (data?.session?.user) {
-      usuario = data.session.user;
-      await carregarPerfil();
-      return;
-    }
-  } catch (e) {}
-
-  if (sessaoOffline) {
-    usuario = { id: sessaoOffline.id };
-    perfil = sessaoOffline;
-
-    abrirAppOffline();
-  }
-});
-function abrirAppOffline() {
-  document.getElementById('loginTela').classList.add('hidden');
-  document.getElementById('appTela').classList.remove('hidden');
-
-  document.getElementById('saudacao').innerText =
-    `Olá, ${perfil.nome}`;
-
-  document.getElementById('dadosUsuario').innerText =
-    `Modo Offline | Setor: ${perfil.setor}`;
-
-  configurarNovaParadaPorPerfil();
-  mostrarTela('novaParadaTela');
+<script>
+if ('serviceWorker' in navigator) {
+ navigator.serviceWorker.register('/service-worker.js');
 }
 </script>
 </body>
