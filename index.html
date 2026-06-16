@@ -58,9 +58,11 @@
     }
 
     button:hover { opacity: .95; }
+    button:disabled { opacity: .6; cursor: not-allowed; }
     .btn-secondary { background: #6b7280; }
     .btn-danger { background: #dc2626; }
     .btn-success { background: #16a34a; }
+    .btn-warning { background: #d97706; }
     .grid-1 { grid-template-columns: 1fr; }
     .grid-2, .grid-3, .grid-4, .menu { display: grid; gap: 12px; }
     .grid-2 { grid-template-columns: 1fr 1fr; }
@@ -87,6 +89,7 @@
 
     .aberta { background: #fef3c7; color: #92400e; }
     .finalizada { background: #dcfce7; color: #166534; }
+    .pendente { background: #fee2e2; color: #991b1b; }
 
     .erro { color: #dc2626; font-weight: bold; }
     .ok { color: #16a34a; font-weight: bold; }
@@ -137,6 +140,40 @@
       margin-bottom: 16px;
     }
 
+    .painel-offline {
+      border: 1px solid #fbbf24;
+      background: #fffbeb;
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+
+    .painel-offline.sem-pendencia {
+      border-color: #bbf7d0;
+      background: #f0fdf4;
+    }
+
+    .linha-pendencia {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid #fde68a;
+      font-size: 13px;
+    }
+
+    .linha-pendencia:last-child { border-bottom: none; }
+
+    .tag-tipo {
+      font-size: 11px;
+      font-weight: bold;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: #e0e7ff;
+      color: #3730a3;
+    }
+
     @media (max-width: 900px) {
       .grid-2, .grid-3, .grid-4, .menu, .tabs {
         grid-template-columns: 1fr;
@@ -158,6 +195,7 @@
       <div class="card">
         <h2 id="saudacao">Olá</h2>
         <div class="small" id="dadosUsuario"></div>
+        <div class="small" id="statusConexaoTopo" style="margin-top:8px;"></div>
 
         <div class="menu" style="margin-top:12px;">
           <button onclick="mostrarTela('novaParadaTela')">Nova parada</button>
@@ -200,6 +238,7 @@
 </div>
 <div id="abertasTela" class="card hidden">
   <h3>Paradas em aberto</h3>
+  <div id="painelPendenciasAbertas"></div>
   <div id="listaAbertas"></div>
 </div>
 <div id="historicoTela" class="card hidden">
@@ -289,8 +328,8 @@ let usuario = null;
 let perfil = null;
 let setoresCache = [];
 let maquinasCache = [];
+let sincronizando = false;
 
-const STORAGE_FILA_PARADAS = 'fila_paradas_offline_v1';
     document.getElementById('dataParada').value = hojeISO();
     document.getElementById('filtroInicioHistorico').value = primeiroDiaMes();
     document.getElementById('filtroFimHistorico').value = hojeISO();
@@ -603,6 +642,10 @@ async function carregarMaquinas() {
 
   preencherMaquinas([]);
 }
+
+/* =========================================================
+   ABRIR PARADA (online + fallback offline com fila idempotente)
+   ========================================================= */
 async function abrirParada() {
   const select = document.getElementById('maquinaSelect');
   const option = select.options[select.selectedIndex];
@@ -622,6 +665,8 @@ async function abrirParada() {
     return;
   }
 
+  const offlineId = gerarUUID();
+
   const payload = {
     maquina_id: maquinaId,
     maquina_nome: maquinaNome,
@@ -631,32 +676,39 @@ async function abrirParada() {
     hora_inicio: horaInicio,
     usuario_id: usuario.id,
     usuario_nome: perfil.nome,
-    status: 'ABERTA'
+    status: 'ABERTA',
+    offline_id: offlineId
   };
 
   if (!estaOnline()) {
-    adicionarFilaOffline(payload);
+    await adicionarFilaCriacao(payload);
 
-    msg.innerHTML = `<div class="ok">Sem internet. Parada salva no app e será sincronizada depois.</div>`;
+    msg.innerHTML = `<div class="ok">Sem internet. Parada salva no app e será sincronizada quando a conexão voltar.</div>`;
     notificarNovaParada(
       'Nova parada registrada',
       `${maquinaNome} - ${setorSelecionado} (salva offline)`
     );
 
     limparFormularioNovaParada();
-    await carregarAbertas();
-    await carregarHistorico();
-    await carregarDashboard();
+    atualizarInfoFilaOffline();
     return;
   }
 
-  const { error } = await client
-    .from('paradas')
-    .insert([payload]);
+  try {
+    const { error } = await client
+      .from('paradas')
+      .insert([payload]);
 
-  if (error) {
-    adicionarFilaOffline(payload);
-    msg.innerHTML = `<div class="erro">Falha online. A parada foi guardada no app para sincronizar depois.</div>`;
+    if (error) {
+      await adicionarFilaCriacao(payload);
+      msg.innerHTML = `<div class="erro">Falha ao gravar online. A parada foi guardada no app para sincronizar depois.</div>`;
+      atualizarInfoFilaOffline();
+      return;
+    }
+  } catch (err) {
+    await adicionarFilaCriacao(payload);
+    msg.innerHTML = `<div class="erro">Falha de conexão. A parada foi guardada no app para sincronizar depois.</div>`;
+    atualizarInfoFilaOffline();
     return;
   }
 
@@ -673,6 +725,7 @@ async function abrirParada() {
   await carregarHistorico();
   await carregarDashboard();
 }
+
     async function carregarAbertas() {
       const div = document.getElementById('listaAbertas');
 
@@ -687,6 +740,8 @@ async function abrirParada() {
       }
 
       const { data, error } = await query;
+
+      await atualizarPainelPendenciasAbertas();
 
       if (error) {
         div.innerHTML = `<div class="erro">${error.message}</div>`;
@@ -770,38 +825,75 @@ async function abrirParada() {
       });
     }
 
-    async function finalizarParada(id, horaInicio) {
-      const horaFim = document.getElementById(`fim_${id}`).value;
-      const observacao = document.getElementById(`obs_${id}`).value.trim();
+/* =========================================================
+   FINALIZAR PARADA (online + fallback offline)
+   ========================================================= */
+async function finalizarParada(id, horaInicio) {
+  const horaFim = document.getElementById(`fim_${id}`).value;
+  const observacao = document.getElementById(`obs_${id}`).value.trim();
 
-      if (!horaFim) {
-        alert('Informe a hora final.');
-        return;
-      }
+  if (!horaFim) {
+    alert('Informe a hora final.');
+    return;
+  }
 
-      const duracao = calcularDuracaoMin(horaInicio, horaFim);
+  const duracao = calcularDuracaoMin(horaInicio, horaFim);
 
-      const { error } = await client
-        .from('paradas')
-        .update({
-          hora_fim: horaFim,
-          observacao: observacao,
-          status: 'FINALIZADA',
-          duracao_min: duracao
-        })
-        .eq('id', id);
+  const dadosFinalizacao = {
+    hora_fim: horaFim,
+    observacao: observacao,
+    status: 'FINALIZADA',
+    duracao_min: duracao
+  };
 
-      if (error) {
-        alert(error.message);
-        return;
-      }
+  if (!estaOnline()) {
+    await adicionarFilaFinalizacao({
+      parada_id: id,
+      offline_id: gerarUUID(),
+      ...dadosFinalizacao
+    });
 
-      alert('Parada finalizada com sucesso.');
+    alert('Sem internet. A finalização foi guardada no app e será sincronizada quando a conexão voltar.');
+    atualizarInfoFilaOffline();
+    await atualizarPainelPendenciasAbertas();
+    return;
+  }
 
-      await carregarAbertas();
-      await carregarHistorico();
-      await carregarDashboard();
+  try {
+    const { error } = await client
+      .from('paradas')
+      .update(dadosFinalizacao)
+      .eq('id', id);
+
+    if (error) {
+      await adicionarFilaFinalizacao({
+        parada_id: id,
+        offline_id: gerarUUID(),
+        ...dadosFinalizacao
+      });
+      alert('Falha ao gravar online. A finalização foi guardada no app para sincronizar depois.');
+      atualizarInfoFilaOffline();
+      await atualizarPainelPendenciasAbertas();
+      return;
     }
+  } catch (err) {
+    await adicionarFilaFinalizacao({
+      parada_id: id,
+      offline_id: gerarUUID(),
+      ...dadosFinalizacao
+    });
+    alert('Falha de conexão. A finalização foi guardada no app para sincronizar depois.');
+    atualizarInfoFilaOffline();
+    await atualizarPainelPendenciasAbertas();
+    return;
+  }
+
+  alert('Parada finalizada com sucesso.');
+
+  await carregarAbertas();
+  await carregarHistorico();
+  await carregarDashboard();
+}
 
     async function carregarDashboard() {
       const inicio = document.getElementById('filtroInicioDash').value;
@@ -1064,96 +1156,308 @@ async function abrirParada() {
       document.getElementById('loginTela').classList.remove('hidden');
       document.getElementById('loginMsg').innerHTML = '';
     }
+
+/* =========================================================
+   CONEXÃO
+   ========================================================= */
 function estaOnline() {
   return navigator.onLine;
 }
 
-function atualizarStatusConexao() {
+async function atualizarStatusConexao() {
   const el = document.getElementById('statusConexao');
-  if (!el) return;
+  const elTopo = document.getElementById('statusConexaoTopo');
 
-  if (estaOnline()) {
-    el.innerHTML = '<span class="ok">🟢 Online</span>';
-  } else {
-    el.innerHTML = '<span class="erro">🔴 Offline</span>';
-  }
+  const online = estaOnline();
+  const html = online
+    ? '<span class="ok">🟢 Online</span>'
+    : '<span class="erro">🔴 Offline — os lançamentos serão guardados no aparelho</span>';
 
-  atualizarInfoFilaOffline();
+  if (el) el.innerHTML = html;
+  if (elTopo) elTopo.innerHTML = html;
+
+  await atualizarInfoFilaOffline();
 }
 
-function lerFilaOffline() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_FILA_PARADAS) || '[]');
-  } catch {
-    return [];
-  }
+/* =========================================================
+   ARMAZENAMENTO OFFLINE — IndexedDB
+   Bancos: criacoes_pendentes, finalizacoes_pendentes
+   ========================================================= */
+const DB_NOME = 'paradas_offline_db';
+const DB_VERSAO = 1;
+const STORE_CRIACOES = 'criacoes_pendentes';
+const STORE_FINALIZACOES = 'finalizacoes_pendentes';
+
+let dbPromise = null;
+
+function abrirDB() {
+  if (dbPromise) return dbPromise;
+
+  dbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NOME, DB_VERSAO);
+
+    req.onupgradeneeded = (evento) => {
+      const db = evento.target.result;
+
+      if (!db.objectStoreNames.contains(STORE_CRIACOES)) {
+        db.createObjectStore(STORE_CRIACOES, { keyPath: 'offline_id' });
+      }
+
+      if (!db.objectStoreNames.contains(STORE_FINALIZACOES)) {
+        db.createObjectStore(STORE_FINALIZACOES, { keyPath: 'offline_id' });
+      }
+    };
+
+    req.onsuccess = (evento) => resolve(evento.target.result);
+    req.onerror = (evento) => reject(evento.target.error);
+  });
+
+  return dbPromise;
 }
 
-function salvarFilaOffline(lista) {
-  localStorage.setItem(STORAGE_FILA_PARADAS, JSON.stringify(lista));
-  atualizarInfoFilaOffline();
+function dbTransacao(storeName, modo) {
+  return abrirDB().then(db => db.transaction(storeName, modo).objectStore(storeName));
 }
 
-function adicionarFilaOffline(item) {
-  const fila = lerFilaOffline();
-  fila.push({
-    ...item,
-    offline_id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+async function dbAdicionar(storeName, registro) {
+  const store = await dbTransacao(storeName, 'readwrite');
+  return new Promise((resolve, reject) => {
+    const req = store.put(registro);
+    req.onsuccess = () => resolve(true);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbListarTodos(storeName) {
+  const store = await dbTransacao(storeName, 'readonly');
+  return new Promise((resolve, reject) => {
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbRemover(storeName, chave) {
+  const store = await dbTransacao(storeName, 'readwrite');
+  return new Promise((resolve, reject) => {
+    const req = store.delete(chave);
+    req.onsuccess = () => resolve(true);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbAtualizar(storeName, registro) {
+  return dbAdicionar(storeName, registro);
+}
+
+function gerarUUID() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+async function adicionarFilaCriacao(payload) {
+  await dbAdicionar(STORE_CRIACOES, {
+    ...payload,
+    tentativas: 0,
+    ultimo_erro: null,
     criado_em_local: new Date().toISOString()
   });
-  salvarFilaOffline(fila);
 }
 
-function atualizarInfoFilaOffline() {
+async function adicionarFilaFinalizacao(payload) {
+  await dbAdicionar(STORE_FINALIZACOES, {
+    ...payload,
+    tentativas: 0,
+    ultimo_erro: null,
+    criado_em_local: new Date().toISOString()
+  });
+}
+
+async function contarPendencias() {
+  const [criacoes, finalizacoes] = await Promise.all([
+    dbListarTodos(STORE_CRIACOES),
+    dbListarTodos(STORE_FINALIZACOES)
+  ]);
+  return { criacoes: criacoes.length, finalizacoes: finalizacoes.length };
+}
+
+async function atualizarInfoFilaOffline() {
   const el = document.getElementById('filaOfflineInfo');
   if (!el) return;
 
-  const fila = lerFilaOffline();
-  if (!fila.length) {
+  const { criacoes, finalizacoes } = await contarPendencias();
+  const total = criacoes + finalizacoes;
+
+  if (!total) {
     el.innerHTML = 'Sem pendências offline.';
     return;
   }
 
-  el.innerHTML = `${fila.length} parada(s) pendente(s) para sincronizar.`;
+  const partes = [];
+  if (criacoes) partes.push(`${criacoes} abertura(s)`);
+  if (finalizacoes) partes.push(`${finalizacoes} finalização(ões)`);
+
+  el.innerHTML = `<span class="erro">${total} pendência(s) para sincronizar: ${partes.join(' e ')}.</span>`;
 }
 
+async function atualizarPainelPendenciasAbertas() {
+  const div = document.getElementById('painelPendenciasAbertas');
+  if (!div) return;
+
+  const criacoes = await dbListarTodos(STORE_CRIACOES);
+  const finalizacoes = await dbListarTodos(STORE_FINALIZACOES);
+  const total = criacoes.length + finalizacoes.length;
+
+  if (!total) {
+    div.innerHTML = `
+      <div class="painel-offline sem-pendencia">
+        <b>✅ Sem pendências offline.</b>
+        <div class="small">Tudo que foi lançado já está sincronizado com o servidor.</div>
+      </div>
+    `;
+    return;
+  }
+
+  const linhasCriacoes = criacoes.map(c => `
+    <div class="linha-pendencia">
+      <span><span class="tag-tipo">Abertura</span> ${c.maquina_nome || 'Máquina'} — ${c.setor || ''} (${c.data_parada || ''} ${c.hora_inicio || ''})</span>
+    </div>
+  `).join('');
+
+  const linhasFinalizacoes = finalizacoes.map(f => `
+    <div class="linha-pendencia">
+      <span><span class="tag-tipo">Finalização</span> Parada ref. ${String(f.parada_id || f.offline_id_referencia || '').slice(0, 8)} — fim ${f.hora_fim || ''}</span>
+    </div>
+  `).join('');
+
+  div.innerHTML = `
+    <div class="painel-offline">
+      <b>⏳ ${total} pendência(s) aguardando sincronização</b>
+      <div class="small" style="margin: 6px 0 10px;">Serão enviadas automaticamente quando a internet voltar.</div>
+      ${linhasCriacoes}
+      ${linhasFinalizacoes}
+      <button class="btn-warning" style="margin-top:10px;" onclick="tentarSincronizarAgora()" ${sincronizando ? 'disabled' : ''}>
+        ${sincronizando ? 'Sincronizando...' : 'Tentar sincronizar agora'}
+      </button>
+    </div>
+  `;
+}
+
+async function tentarSincronizarAgora() {
+  if (!estaOnline()) {
+    alert('Ainda sem internet. Aguarde a conexão voltar ou tente novamente em outra área.');
+    return;
+  }
+  await sincronizarFilaOffline();
+}
+
+/* =========================================================
+   SINCRONIZAÇÃO
+   Ordem: 1) criações pendentes  2) finalizações pendentes
+   Lock simples evita disparos concorrentes (evento online + reabrir app)
+   ========================================================= */
 async function sincronizarFilaOffline() {
+  if (sincronizando) return;
   if (!estaOnline()) return;
 
-  const fila = lerFilaOffline();
-  if (!fila.length) return;
+  sincronizando = true;
+  await atualizarPainelPendenciasAbertas();
 
-  const restantes = [];
+  try {
+    await sincronizarCriacoesPendentes();
+    await sincronizarFinalizacoesPendentes();
+  } finally {
+    sincronizando = false;
+  }
+
+  await atualizarInfoFilaOffline();
+  await atualizarPainelPendenciasAbertas();
+
+  if (document.getElementById('abertasTela') && !document.getElementById('abertasTela').classList.contains('hidden')) {
+    await carregarAbertas();
+  }
+  await carregarHistorico();
+  await carregarDashboard();
+}
+
+async function sincronizarCriacoesPendentes() {
+  const fila = await dbListarTodos(STORE_CRIACOES);
+  if (!fila.length) return;
 
   for (const item of fila) {
     try {
+      const { offline_id, tentativas, ultimo_erro, criado_em_local, ...payload } = item;
+
       const { error } = await client
         .from('paradas')
-        .insert([{
-          maquina_id: item.maquina_id,
-          maquina_nome: item.maquina_nome,
-          setor: item.setor,
-          data_parada: item.data_parada,
-          motivo: item.motivo,
-          hora_inicio: item.hora_inicio,
-          usuario_id: item.usuario_id,
-          usuario_nome: item.usuario_nome,
-          status: 'ABERTA'
-        }]);
+        .insert([payload]);
 
       if (error) {
-        restantes.push(item);
+        await dbAtualizar(STORE_CRIACOES, {
+          ...item,
+          tentativas: (item.tentativas || 0) + 1,
+          ultimo_erro: error.message
+        });
+        continue;
       }
-    } catch {
-      restantes.push(item);
+
+      await dbRemover(STORE_CRIACOES, item.offline_id);
+
+    } catch (err) {
+      await dbAtualizar(STORE_CRIACOES, {
+        ...item,
+        tentativas: (item.tentativas || 0) + 1,
+        ultimo_erro: err.message
+      });
     }
   }
+}
 
-  salvarFilaOffline(restantes);
+async function sincronizarFinalizacoesPendentes() {
+  const fila = await dbListarTodos(STORE_FINALIZACOES);
+  if (!fila.length) return;
 
-  await carregarAbertas();
-  await carregarHistorico();
-  await carregarDashboard();
+  for (const item of fila) {
+    try {
+      const { offline_id, parada_id, tentativas, ultimo_erro, criado_em_local, ...dados } = item;
+
+      if (!parada_id) {
+        await dbAtualizar(STORE_FINALIZACOES, {
+          ...item,
+          tentativas: (item.tentativas || 0) + 1,
+          ultimo_erro: 'Parada de referência ainda não foi sincronizada.'
+        });
+        continue;
+      }
+
+      const { error } = await client
+        .from('paradas')
+        .update(dados)
+        .eq('id', parada_id);
+
+      if (error) {
+        await dbAtualizar(STORE_FINALIZACOES, {
+          ...item,
+          tentativas: (item.tentativas || 0) + 1,
+          ultimo_erro: error.message
+        });
+        continue;
+      }
+
+      await dbRemover(STORE_FINALIZACOES, item.offline_id);
+
+    } catch (err) {
+      await dbAtualizar(STORE_FINALIZACOES, {
+        ...item,
+        tentativas: (item.tentativas || 0) + 1,
+        ultimo_erro: err.message
+      });
+    }
+  }
 }
 
 async function pedirPermissaoNotificacaoWeb() {
@@ -1272,17 +1576,19 @@ async function configurarNovaParadaPorPerfil() {
     const maquinasUsuario = maquinasCache.filter(m => m.setor === setorUsuario);
     preencherMaquinas(maquinasUsuario);
   }
-}window.addEventListener('online', async () => {
-  atualizarStatusConexao();
+}
+
+window.addEventListener('online', async () => {
+  await atualizarStatusConexao();
   await sincronizarFilaOffline();
 });
 
-window.addEventListener('offline', () => {
-  atualizarStatusConexao();
+window.addEventListener('offline', async () => {
+  await atualizarStatusConexao();
 });
 
 window.addEventListener('load', async () => {
-  atualizarStatusConexao();
+  await atualizarStatusConexao();
 
   const { data } = await client.auth.getSession();
 
@@ -1290,7 +1596,7 @@ window.addEventListener('load', async () => {
     usuario = data.session.user;
     await carregarPerfil();
   }
-}); 
+});
 </script>
 
 <script>
