@@ -432,14 +432,26 @@ let modoOffline = false;
     async function loginOffline(email, senha) {
       const msg = document.getElementById('loginMsg');
 
-      const cache = await buscarCredencialOffline(email);
+      let cache;
+      try {
+        cache = await buscarCredencialOffline(email);
+      } catch (err) {
+        msg.innerHTML = `<div class="erro">Não foi possível acessar os dados salvos neste aparelho (${err.message}). Se você tiver outra aba ou janela deste app aberta, feche-a e recarregue esta página.</div>`;
+        return;
+      }
 
       if (!cache) {
         msg.innerHTML = `<div class="erro">Sem internet e nenhum login anterior encontrado neste aparelho para este e-mail. É necessário fazer login online pelo menos uma vez antes de usar offline.</div>`;
         return;
       }
 
-      const senhaOk = await validarSenhaOffline(senha, cache.salt, cache.hash);
+      let senhaOk;
+      try {
+        senhaOk = await validarSenhaOffline(senha, cache.salt, cache.hash);
+      } catch (err) {
+        msg.innerHTML = `<div class="erro">Falha ao verificar a senha offline: ${err.message}</div>`;
+        return;
+      }
 
       if (!senhaOk) {
         msg.innerHTML = `<div class="erro">Senha incorreta (verificação offline).</div>`;
@@ -466,6 +478,8 @@ let modoOffline = false;
     function abrirAppComPerfil() {
       document.getElementById('loginTela').classList.add('hidden');
       document.getElementById('appTela').classList.remove('hidden');
+
+      salvarSessaoLocal();
 
       document.getElementById('saudacao').innerText = `Olá, ${perfil.nome}`;
       document.getElementById('dadosUsuario').innerText =
@@ -1292,6 +1306,8 @@ async function finalizarParada(id, horaInicio) {
         }
       }
 
+      await limparSessaoLocal();
+
       usuario = null;
       perfil = null;
       modoOffline = false;
@@ -1335,14 +1351,15 @@ async function atualizarStatusConexao() {
 
 /* =========================================================
    ARMAZENAMENTO OFFLINE — IndexedDB
-   Bancos: criacoes_pendentes, finalizacoes_pendentes, credenciais_offline, config_cache
+   Bancos: criacoes_pendentes, finalizacoes_pendentes, credenciais_offline, config_cache, sessao_local
    ========================================================= */
 const DB_NOME = 'paradas_offline_db';
-const DB_VERSAO = 3;
+const DB_VERSAO = 4;
 const STORE_CRIACOES = 'criacoes_pendentes';
 const STORE_FINALIZACOES = 'finalizacoes_pendentes';
 const STORE_CREDENCIAIS = 'credenciais_offline';
 const STORE_CONFIG = 'config_cache';
+const STORE_SESSAO = 'sessao_local';
 
 let dbPromise = null;
 
@@ -1350,6 +1367,8 @@ function abrirDB() {
   if (dbPromise) return dbPromise;
 
   dbPromise = new Promise((resolve, reject) => {
+    let resolvido = false;
+
     const req = indexedDB.open(DB_NOME, DB_VERSAO);
 
     req.onupgradeneeded = (evento) => {
@@ -1372,10 +1391,60 @@ function abrirDB() {
         // chave = nome da config ('setores', 'maquinas'), valor = array cacheado
         db.createObjectStore(STORE_CONFIG, { keyPath: 'chave' });
       }
+
+      if (!db.objectStoreNames.contains(STORE_SESSAO)) {
+        // registro único (chave fixa 'atual') com a sessão ativa neste aparelho,
+        // permitindo restaurá-la após reload/fechar o app sem pedir senha de novo
+        db.createObjectStore(STORE_SESSAO, { keyPath: 'chave' });
+      }
     };
 
-    req.onsuccess = (evento) => resolve(evento.target.result);
-    req.onerror = (evento) => reject(evento.target.error);
+    req.onblocked = () => {
+      // Outra aba/instância do app está com uma versão antiga do banco aberta
+      // e não liberou a conexão. Sem isso, o open() acima ficaria pendurado
+      // pra sempre, sem erro nenhum aparecer — é exatamente esse o cenário que
+      // trava o login offline silenciosamente após um deploy de nova versão.
+      console.warn('IndexedDB bloqueado por outra aba/instância. Feche outras abas do app e recarregue.');
+      if (!resolvido) {
+        resolvido = true;
+        dbPromise = null; // permite tentar de novo na próxima chamada
+        reject(new Error('Banco local bloqueado por outra aba do app aberta. Feche as outras abas/instâncias do Controle de Paradas e tente novamente.'));
+      }
+    };
+
+    req.onsuccess = (evento) => {
+      if (resolvido) return;
+      resolvido = true;
+
+      const db = evento.target.result;
+
+      // Se outra aba tentar abrir uma versão mais nova do banco no futuro,
+      // esta conexão se fecha voluntariamente em vez de bloquear a outra aba.
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+
+      resolve(db);
+    };
+
+    req.onerror = (evento) => {
+      if (resolvido) return;
+      resolvido = true;
+      dbPromise = null; // permite tentar de novo na próxima chamada, em vez de ficar preso num erro antigo
+      reject(evento.target.error);
+    };
+
+    // Timeout de segurança: se nada (sucesso, erro ou blocked) responder em
+    // 8 segundos, desiste e libera para uma nova tentativa, em vez de travar
+    // a UI esperando para sempre.
+    setTimeout(() => {
+      if (!resolvido) {
+        resolvido = true;
+        dbPromise = null;
+        reject(new Error('Tempo esgotado ao abrir o banco local (IndexedDB). Tente fechar outras abas do app e recarregar a página.'));
+      }
+    }, 8000);
   });
 
   return dbPromise;
@@ -1528,6 +1597,104 @@ async function buscarCacheConfig(chave) {
     return registro ? registro.valor : null;
   } catch {
     return null;
+  }
+}
+
+/* =========================================================
+   SESSÃO LOCAL PERSISTIDA
+   Mantém o login ativo entre reloads/fechar o app, mesmo offline.
+   Guarda só o necessário para reabrir a UI; nunca a senha.
+   ========================================================= */
+async function salvarSessaoLocal() {
+  try {
+    await dbAdicionar(STORE_SESSAO, {
+      chave: 'atual',
+      usuario_id: usuario?.id || null,
+      usuario_email: usuario?.email || perfil?.email || null,
+      perfil,
+      modoOffline,
+      salvo_em: new Date().toISOString()
+    });
+  } catch {
+    // Se isso falhar, o pior caso é o usuário precisar logar de novo no próximo reload.
+  }
+}
+
+async function buscarSessaoLocal() {
+  try {
+    const store = await dbTransacao(STORE_SESSAO, 'readonly');
+    return await new Promise((resolve, reject) => {
+      const req = store.get('atual');
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function limparSessaoLocal() {
+  try {
+    await dbRemover(STORE_SESSAO, 'atual');
+  } catch {
+    // não crítico
+  }
+}
+
+async function restaurarSessaoLocal() {
+  try {
+    const sessao = await buscarSessaoLocal();
+    if (!sessao || !sessao.perfil) return false;
+
+    // Se a sessão guardada era offline, revalida revogação/inatividade pelo cache de
+    // credenciais (que é atualizado sempre que o admin revoga ou o usuário desativa).
+    if (sessao.modoOffline) {
+      const cache = await buscarCredencialOffline(sessao.usuario_email);
+
+      if (!cache || cache.revogado_offline_em || !cache.perfil?.ativo) {
+        await limparSessaoLocal();
+        return false;
+      }
+
+      usuario = { id: cache.perfil.id, email: cache.perfil.email };
+      perfil = cache.perfil;
+      modoOffline = true;
+      abrirAppComPerfil();
+      return true;
+    }
+
+    // Sessão era online: tenta restaurar de fato a sessão do Supabase se houver rede;
+    // se não houver rede agora, ainda assim reabre a UI com os dados em cache,
+    // em modo degradado (equivalente a uma sessão offline), para não travar o usuário.
+    if (estaOnline()) {
+      try {
+        const { data } = await client.auth.getSession();
+        if (data?.session?.user) {
+          usuario = data.session.user;
+          modoOffline = false;
+          await carregarPerfil();
+          return true;
+        }
+      } catch {
+        // cai para o modo degradado abaixo
+      }
+    }
+
+    usuario = { id: sessao.perfil.id, email: sessao.perfil.email };
+    perfil = sessao.perfil;
+    modoOffline = true;
+    abrirAppComPerfil();
+    return true;
+
+  } catch (err) {
+    // Falha ao acessar o banco local (ex: bloqueado por outra aba). Não trava a
+    // página: deixa cair na tela de login normalmente, com um aviso explicativo.
+    console.warn('Não foi possível restaurar a sessão local:', err.message);
+    const msg = document.getElementById('loginMsg');
+    if (msg) {
+      msg.innerHTML = `<div class="erro">Não foi possível restaurar sua sessão automaticamente (${err.message}). Se houver outra aba deste app aberta, feche-a e recarregue. Você ainda pode fazer login manualmente abaixo.</div>`;
+    }
+    return false;
   }
 }
 
@@ -1883,11 +2050,14 @@ window.addEventListener('load', async () => {
   await atualizarStatusConexao();
   atualizarAvisoLoginConexao();
 
-  if (!estaOnline()) {
-    // Sem rede ao abrir o app: não tentamos restaurar sessão Supabase (exigiria
-    // refresh de token), deixamos o usuário usar o login offline manualmente.
-    return;
-  }
+  // 1) Tenta restaurar uma sessão já aberta neste aparelho (online ou offline),
+  //    salva no IndexedDB. Isso é o que evita pedir login de novo a cada reload.
+  const restaurou = await restaurarSessaoLocal();
+  if (restaurou) return;
+
+  // 2) Sem sessão local salva: se houver rede, tenta a sessão padrão do Supabase
+  //    (cobre o caso de primeira visita após o deploy desta versão).
+  if (!estaOnline()) return;
 
   try {
     const { data } = await client.auth.getSession();
