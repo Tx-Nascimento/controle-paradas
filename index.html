@@ -910,10 +910,10 @@ async function abrirParada() {
             <b>Hora início:</b> ${item.hora_inicio}<br>
             <b>Motivo:</b> ${item.motivo}<br>
             <b>Usuário:</b> ${item.usuario_nome}<br><br>
-
+            <input type="date" id="dataFim_${item.id}" value="${hojeISO()}" />
             <input type="time" id="fim_${item.id}" />
             <textarea id="obs_${item.id}" rows="3" placeholder="Observação da resolução"></textarea>
-            <button onclick="finalizarParada('${item.id}', '${item.hora_inicio}')">Finalizar parada</button>
+            <button onclick="finalizarParada('${item.id}', '${item.data_parada}', '${item.hora_inicio}')">Finalizar parada</button>
             ${perfil.admin ? `<button class="btn-danger" onclick="excluirParadaAdmin('${item.id}')">Excluir parada</button>` : ''}
           </div>
         `;
@@ -961,7 +961,7 @@ async function abrirParada() {
             <b>Data parada:</b> ${item.data_parada}<br>
             <b>Motivo:</b> ${item.motivo}<br>
             <b>Início:</b> ${item.hora_inicio || '-'}<br>
-            <b>Fim:</b> ${item.hora_fim || '-'}<br>
+            <b>Fim: ${item.data_fim || item.data_parada} ${item.hora_fim}<br>
             <b>Duração:</b> ${minutosParaHora(item.duracao_min || 0)}<br>
             <b>Observação:</b> ${item.observacao || '-'}<br>
             <b>Usuário:</b> ${item.usuario_nome}
@@ -974,7 +974,8 @@ async function abrirParada() {
 /* =========================================================
    FINALIZAR PARADA (online + fallback offline)
    ========================================================= */
-async function finalizarParada(id, horaInicio) {
+async function finalizarParada(id, dataInicio, horaInicio) {
+  const dataFim = document.getElementById(`dataFim_${id}`).value;
   const horaFim = document.getElementById(`fim_${id}`).value;
   const observacao = document.getElementById(`obs_${id}`).value.trim();
 
@@ -983,9 +984,14 @@ async function finalizarParada(id, horaInicio) {
     return;
   }
 
-  const duracao = calcularDuracaoMin(horaInicio, horaFim);
-
+ const duracao = calcularDuracaoMin(
+    dataInicio,
+    horaInicio,
+    dataFim,
+    horaFim
+);
   const dadosFinalizacao = {
+    data_fim: dataFim,
     hora_fim: horaFim,
     observacao: observacao,
     status: 'FINALIZADA',
@@ -1232,19 +1238,14 @@ async function finalizarParada(id, horaInicio) {
       return d.toISOString().slice(0, 10);
     }
 
-    function calcularDuracaoMin(horaInicio, horaFim) {
-      const [hi, mi] = horaInicio.split(':').map(Number);
-      const [hf, mf] = horaFim.split(':').map(Number);
+  function calcularDuracaoMin(dataInicio, horaInicio, dataFim, horaFim) {
 
-      let inicio = hi * 60 + mi;
-      let fim = hf * 60 + mf;
-      let total = fim - inicio;
+    const inicio = new Date(`${dataInicio}T${horaInicio}:00`);
+    const fim = new Date(`${dataFim}T${horaFim}:00`);
 
-      if (total < 0) total += 1440;
+    return Math.floor((fim - inicio) / 60000);
 
-      return total;
-    }
-
+}
     function minutosParaHora(min) {
       const total = Number(min || 0);
       const horas = Math.floor(total / 60);
